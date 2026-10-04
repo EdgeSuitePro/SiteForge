@@ -17,6 +17,7 @@ const BUILT_IN_FORBIDDEN_DB_HOSTS = [
 ];
 
 const DEV_SESSION_SECRET = 'siteforge-local-dev-session-secret-not-for-deployment';
+const DEV_JOB_SECRET = 'siteforge-local-dev-job-secret-not-for-deployment';
 
 const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
 const optionalString = z.preprocess(emptyToUndefined, z.string().min(1).optional());
@@ -45,6 +46,9 @@ const rawSchema = z.object({
   APP_BASE_URL: z.preprocess(emptyToUndefined, z.url().optional()),
   JOB_SECRET: optionalString,
   CRON_SECRET: optionalString,
+  VERCEL_URL: optionalString,
+  VERCEL_AUTOMATION_BYPASS_SECRET: optionalString,
+  PORT: optionalString,
 
   ANTHROPIC_API_KEY: optionalString,
 
@@ -62,8 +66,10 @@ export interface ServerEnv {
     | { mode: 'dev'; devOperatorEmail: string }
     | { mode: 'supabase'; supabaseUrl: string; supabaseAnonKey: string };
   sessionSecret: string;
-  appBaseUrl: string | undefined;
-  jobSecret: string | undefined;
+  /** Base URL the worker uses to call itself. Never derived from request headers. */
+  appBaseUrl: string;
+  jobSecret: string;
+  vercelBypassSecret: string | undefined;
   cronSecret: string | undefined;
   anthropicApiKey: string | undefined;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
@@ -140,6 +146,10 @@ export function parseServerEnv(source: Record<string, string | undefined>): Serv
     throw new EnvError('JOB_SECRET and CRON_SECRET are required on Vercel deployments.');
   }
 
+  const appBaseUrl = (
+    raw.APP_BASE_URL ?? (raw.VERCEL_URL ? `https://${raw.VERCEL_URL}` : `http://localhost:${raw.PORT ?? '3000'}`)
+  ).replace(/\/$/, '');
+
   return {
     nodeEnv: raw.NODE_ENV,
     vercelEnv: raw.VERCEL_ENV,
@@ -147,8 +157,9 @@ export function parseServerEnv(source: Record<string, string | undefined>): Serv
     database,
     auth,
     sessionSecret,
-    appBaseUrl: raw.APP_BASE_URL,
-    jobSecret: raw.JOB_SECRET,
+    appBaseUrl,
+    jobSecret: raw.JOB_SECRET ?? DEV_JOB_SECRET,
+    vercelBypassSecret: raw.VERCEL_AUTOMATION_BYPASS_SECRET,
     cronSecret: raw.CRON_SECRET,
     anthropicApiKey: raw.ANTHROPIC_API_KEY,
     logLevel: raw.LOG_LEVEL,

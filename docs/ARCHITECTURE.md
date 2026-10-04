@@ -58,3 +58,32 @@ prompt id@version, model, and renderer version. Scoring rules and prompts are ve
 - Phase 4: `model_runs`.
 - Phase 5: `concepts`, `share_links`; preview host (`*.preview.edgesuitepro.com`).
 - Later: `esp_handoffs` (see ESP_INTEGRATION.md).
+
+## Crawler and jobs (Phase 1 — implemented)
+
+```
+Analyze (server action) ──insert crawl_run + job──► jobs table
+        │ after()
+        ▼
+  runWorker (≤240s) ── claim (SKIP LOCKED, lease) ──► crawl handler ──► runCrawlTick (≤50s)
+        │                                                              │ state in crawl_runs/crawl_pages
+        │ work due soon? ── POST /api/jobs/run (JOB_SECRET) ──► fresh invocation
+        ▼
+  Vercel Cron /api/jobs/sweep (every minute) ── resumes expired leases / missed hand-offs
+  Progress poll /api/prospects/:id/progress ── also kicks a worker if work is due (local dev safety net)
+```
+
+- **Engine** (`src/core/crawl/engine.ts`): framework-free; talks to a `CrawlStore` interface. Each tick
+  resumes from the database, so a killed invocation loses at most the page in flight (which is re-queued,
+  then failed after 2 interrupted attempts).
+- **First tick**: robots.txt → homepage (follows redirects and locks the canonical origin; www/apex and
+  http/https variants are unified) → robots.txt of the final origin → sitemap discovery.
+- **Ordering**: navigation + sharpening-business keywords (services, pricing, about, contact, FAQ, hours,
+  mail-in, drop-off, booking…) first; blog archives and pagination last.
+- **Limits** (`crawl_runs.limits`, versioned with `crawler@1`): 25 pages (max 60), depth 4, 2 MB HTML,
+  10 s/request, 6 min total, ≥1 s between requests (or robots `Crawl-delay`, max 10 s), 500 queued
+  URLs, 3 URLs per path pattern (calendar/pagination traps), 5 redirects.
+- **Storage**: page metadata in `crawl_pages`; gzipped raw HTML in `crawl_page_bodies` so Phase 2
+  extractors can be re-run without re-crawling.
+- **Outcomes recorded per page**: crawled, error (HTTP status — later used for broken-link findings),
+  skipped with a reason (robots, not HTML, off-site redirect, duplicate redirect, limits).

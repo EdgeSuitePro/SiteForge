@@ -2,11 +2,11 @@
   "name": "siteforge",
   "version": "0.1.0",
   "private": true,
-  "description": "EdgeSuite Pro SiteForge — prospect website audit and concept engine for professional sharpeners.",
+  "description": "EdgeSuite Pro SiteForge \u2014 prospect website audit and concept engine for professional sharpeners.",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19"
   },
   "scripts": {
     "dev": "next dev",
@@ -19,16 +19,20 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --conditions=react-server scripts/migrate.ts",
-    "db:reset-local": "tsx --conditions=react-server scripts/reset-local-db.ts"
+    "db:reset-local": "tsx --conditions=react-server scripts/reset-local-db.ts",
+    "db:seed-demo": "tsx --conditions=react-server scripts/dev-seed-demo.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
+    "cheerio": "1.2.0",
     "drizzle-orm": "0.45.3",
     "next": "16.3.8",
     "postgres": "3.4.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "robots-parser": "3.0.1",
     "server-only": "^0.0.1",
+    "undici": "8.11.2",
     "zod": "4.6.5"
   },
   "devDependencies": {

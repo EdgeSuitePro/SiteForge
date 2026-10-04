@@ -15,7 +15,21 @@
  * Migrations are generated from this file with `pnpm db:generate` and committed to db/migrations.
  */
 import { sql } from 'drizzle-orm';
-import { check, index, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  customType,
+  index,
+  integer,
+  jsonb,
+  pgSchema,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+
+import type { CrawlLimits } from '../../core/crawl/limits';
 
 export const siteforge = pgSchema('siteforge');
 
@@ -123,5 +137,211 @@ export const activityLog = siteforge
       createdAt: createdAt(),
     },
     (table) => [index('activity_log_prospect_created_idx').on(table.prospectId, table.createdAt)],
+  )
+  .enableRLS();
+
+// ---------------------------------------------------------------------------------------------
+// Crawling (Phase 1)
+// ---------------------------------------------------------------------------------------------
+
+/** bytea that always surfaces as a Node Buffer (PGlite returns Uint8Array, postgres-js Buffer). */
+const bytea = customType<{ data: Buffer; driverData: Uint8Array | Buffer }>({
+  dataType: () => 'bytea',
+  fromDriver: (value) => Buffer.from(value),
+  toDriver: (value) => value,
+});
+
+export const CRAWL_RUN_STATUSES = ['queued', 'running', 'completed', 'failed', 'canceled'] as const;
+export type CrawlRunStatus = (typeof CRAWL_RUN_STATUSES)[number];
+
+export const CRAWL_STOP_REASONS = [
+  'exhausted',
+  'page_limit',
+  'time_limit',
+  'canceled',
+  'robots_disallowed',
+  'start_failed',
+  'error',
+] as const;
+export type CrawlStopReason = (typeof CRAWL_STOP_REASONS)[number];
+
+export interface RobotsSnapshot {
+  status: 'parsed' | 'not_found' | 'unavailable';
+  origin: string;
+  detail: string;
+  delayMs: number;
+  sitemaps: string[];
+  /** robots.txt text, capped for storage. */
+  raw: string | null;
+}
+
+export interface CrawlRunNotes {
+  /** Links discarded before queueing, by reason (offsite, extension, …). */
+  discarded?: Record<string, number>;
+  redirectedFrom?: string;
+  likelyJsRendered?: boolean;
+  sitemapUrlsFound?: number;
+}
+
+export const crawlRuns = siteforge
+  .table(
+    'crawl_runs',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id')
+        .notNull()
+        .references(() => prospects.id, { onDelete: 'cascade' }),
+      status: text('status').$type<CrawlRunStatus>().notNull().default('queued'),
+      stopReason: text('stop_reason').$type<CrawlStopReason>(),
+      startUrl: text('start_url').notNull(),
+      /** Origin locked onto after following the homepage redirects, e.g. https://www.example.com */
+      canonicalOrigin: text('canonical_origin'),
+      rootDomain: text('root_domain').notNull(),
+      limits: jsonb('limits').$type<CrawlLimits>().notNull(),
+      crawlerVersion: text('crawler_version').notNull(),
+      robots: jsonb('robots').$type<RobotsSnapshot>(),
+      notes: jsonb('notes').$type<CrawlRunNotes>().notNull().default({}),
+      cancelRequested: boolean('cancel_requested').notNull().default(false),
+      error: text('error'),
+      requestedBy: uuid('requested_by'),
+      lastFetchAt: timestamp('last_fetch_at', { withTimezone: true }),
+      heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+      startedAt: timestamp('started_at', { withTimezone: true }),
+      finishedAt: timestamp('finished_at', { withTimezone: true }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      index('crawl_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
+      check(
+        'crawl_runs_status_check',
+        sql`${table.status} in ('queued', 'running', 'completed', 'failed', 'canceled')`,
+      ),
+      check(
+        'crawl_runs_stop_reason_check',
+        sql`${table.stopReason} is null or ${table.stopReason} in ('exhausted', 'page_limit', 'time_limit', 'canceled', 'robots_disallowed', 'start_failed', 'error')`,
+      ),
+    ],
+  )
+  .enableRLS();
+
+export const CRAWL_PAGE_STATES = ['queued', 'fetching', 'fetched', 'skipped', 'failed'] as const;
+export type CrawlPageState = (typeof CRAWL_PAGE_STATES)[number];
+
+export interface CrawlPageSummary {
+  title: string | null;
+  h1: string | null;
+  lang: string | null;
+  canonical: string | null;
+  metaRobots: { noindex: boolean; nofollow: boolean };
+  wordCount: number;
+  likelyJsRendered: boolean;
+  linkCount: number;
+}
+
+/** One row per URL per crawl run. Doubles as the crawl queue (state = queued). */
+export const crawlPages = siteforge
+  .table(
+    'crawl_pages',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      crawlRunId: uuid('crawl_run_id')
+        .notNull()
+        .references(() => crawlRuns.id, { onDelete: 'cascade' }),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      url: text('url').notNull(),
+      patternKey: text('pattern_key').notNull(),
+      depth: integer('depth').notNull(),
+      priority: integer('priority').notNull().default(0),
+      source: text('source').$type<'start' | 'link' | 'sitemap'>().notNull(),
+      discoveredFrom: text('discovered_from'),
+      linkText: text('link_text'),
+      state: text('state').$type<CrawlPageState>().notNull().default('queued'),
+      skipReason: text('skip_reason'),
+      attempts: integer('attempts').notNull().default(0),
+      httpStatus: integer('http_status'),
+      finalUrl: text('final_url'),
+      contentType: text('content_type'),
+      bytes: integer('bytes'),
+      truncated: boolean('truncated').notNull().default(false),
+      contentHash: text('content_hash'),
+      fetchMs: integer('fetch_ms'),
+      redirects: jsonb('redirects').$type<string[]>(),
+      summary: jsonb('summary').$type<CrawlPageSummary>(),
+      parserVersion: text('parser_version'),
+      error: text('error'),
+      createdAt: createdAt(),
+      fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    },
+    (table) => [
+      uniqueIndex('crawl_pages_run_url_key').on(table.crawlRunId, table.url),
+      index('crawl_pages_run_queue_idx').on(table.crawlRunId, table.state, table.priority, table.createdAt),
+      index('crawl_pages_run_pattern_idx').on(table.crawlRunId, table.patternKey),
+      check(
+        'crawl_pages_state_check',
+        sql`${table.state} in ('queued', 'fetching', 'fetched', 'skipped', 'failed')`,
+      ),
+      check('crawl_pages_source_check', sql`${table.source} in ('start', 'link', 'sitemap')`),
+    ],
+  )
+  .enableRLS();
+
+/** Gzipped raw HTML, kept so extractors can be re-run without re-crawling. Subject to retention. */
+export const crawlPageBodies = siteforge
+  .table('crawl_page_bodies', {
+    pageId: uuid('page_id')
+      .primaryKey()
+      .references(() => crawlPages.id, { onDelete: 'cascade' }),
+    encoding: text('encoding').$type<'gzip'>().notNull().default('gzip'),
+    body: bytea('body').notNull(),
+    sha256: text('sha256').notNull(),
+    createdAt: createdAt(),
+  })
+  .enableRLS();
+
+// ---------------------------------------------------------------------------------------------
+// Background jobs: a Postgres-backed queue (FOR UPDATE SKIP LOCKED + leases).
+// ---------------------------------------------------------------------------------------------
+
+export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'canceled'] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export const jobs = siteforge
+  .table(
+    'jobs',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+      kind: text('kind').notNull(),
+      payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+      /** At most one active (queued/running) job per dedupe key, e.g. `crawl:<runId>`. */
+      dedupeKey: text('dedupe_key'),
+      status: text('status').$type<JobStatus>().notNull().default('queued'),
+      priority: integer('priority').notNull().default(0),
+      runAfter: timestamp('run_after', { withTimezone: true }).notNull().defaultNow(),
+      attempts: integer('attempts').notNull().default(0),
+      maxAttempts: integer('max_attempts').notNull().default(5),
+      lockedBy: text('locked_by'),
+      lockedUntil: timestamp('locked_until', { withTimezone: true }),
+      lastError: text('last_error'),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+      finishedAt: timestamp('finished_at', { withTimezone: true }),
+    },
+    (table) => [
+      index('jobs_claim_idx').on(table.status, table.runAfter, table.priority),
+      uniqueIndex('jobs_active_dedupe_key')
+        .on(table.dedupeKey)
+        .where(sql`${table.status} in ('queued', 'running')`),
+      check(
+        'jobs_status_check',
+        sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'canceled')`,
+      ),
+    ],
   )
   .enableRLS();

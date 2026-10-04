@@ -20,7 +20,7 @@ modifies the prospect's existing website.
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Scaffold: Next.js + TypeScript, Drizzle + PGlite, migrations, dev login, CI | ✅ |
-| 1 | Hardened crawler, background jobs, prospects + crawl progress UI | in progress |
+| 1 | Hardened crawler, background jobs, prospects + crawl progress UI | ✅ |
 | 2–6 | Facts, deterministic audit, AI analysis, concepts + previews, acceptance | planned |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -43,6 +43,7 @@ pnpm test           # unit + database tests (in-memory PGlite)
 pnpm db:generate    # after editing src/server/db/schema.ts — writes a SQL migration
 pnpm db:migrate     # apply migrations to the configured database (explicit, never automatic remotely)
 pnpm db:reset-local # delete the local embedded database
+pnpm db:seed-demo   # crawl the bundled fixture sharpener site into the LOCAL database (no network needed)
 ```
 
 Configuration is documented in [.env.example](.env.example).

@@ -22,7 +22,7 @@ function isPublic(pathname: string): boolean {
   );
 }
 
-function contentSecurityPolicy(nonce: string, isDev: boolean): string {
+function contentSecurityPolicy(nonce: string, isDev: boolean, isDeployed: boolean): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`,
@@ -36,15 +36,17 @@ function contentSecurityPolicy(nonce: string, isDev: boolean): string {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    'upgrade-insecure-requests',
+    // Only on HTTPS deployments: on plain-http localhost it would break every subresource.
+    ...(isDeployed ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 }
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   let secret: string;
+  let isDeployed: boolean;
   try {
-    secret = serverEnv().sessionSecret;
+    ({ sessionSecret: secret, isDeployed } = serverEnv());
   } catch (error) {
     console.error(error);
     return new NextResponse('SiteForge is misconfigured. See server logs.', { status: 500 });
@@ -63,7 +65,7 @@ export function proxy(request: NextRequest) {
   }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
-  const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development');
+  const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', isDeployed);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
