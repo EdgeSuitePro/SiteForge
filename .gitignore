@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# local data (PGlite database, raw crawl cache)
+.data/
+
+# env files — never commit secrets
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+coverage/
+*.log
+.vercel
+playwright-report/
+test-results/

@@ -1,0 +1,5 @@
+# Single-package repo. pnpm 10 requires explicit approval for dependency build scripts.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
