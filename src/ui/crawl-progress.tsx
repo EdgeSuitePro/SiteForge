@@ -111,7 +111,7 @@ export function CrawlProgressPanel({
 
   if (!progress) {
     return (
-      <section className="mt-8 rounded-lg border border-line bg-panel p-6">
+      <section className="rounded-lg border border-line bg-panel p-6">
         <h2 className="font-semibold">Website analysis</h2>
         <p className="mt-1 text-sm text-ink-soft">
           SiteForge will crawl up to 25 public pages, following robots.txt and pausing between requests.
@@ -131,7 +131,7 @@ export function CrawlProgressPanel({
   const discarded = Object.entries(crawl.notes.discarded ?? {}).filter(([, n]) => n > 0);
 
   return (
-    <section className="mt-8 space-y-6">
+    <section className="space-y-6">
       <div className="rounded-lg border border-line bg-panel p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">

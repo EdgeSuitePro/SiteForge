@@ -14,6 +14,9 @@ importers:
       cheerio:
         specifier: 1.2.0
         version: 1.2.0
+      domhandler:
+        specifier: 5.0.3
+        version: 5.0.3
       drizzle-orm:
         specifier: 0.45.3
         version: 0.45.3(@electric-sql/pglite@0.5.8)(postgres@3.4.9)

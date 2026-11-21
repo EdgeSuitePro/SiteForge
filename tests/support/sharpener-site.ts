@@ -6,12 +6,17 @@ import { html, redirect, text, type Handler } from './fixture-server';
  * an off-site redirect, a PDF, a nofollow page, and an internal redirect.
  */
 export function sharpenerSite(getPort: () => number): { routes: Record<string, Handler>; fallback: Handler } {
-  const nav = `<header><nav>
+  const nav = `<header><a href="/"><img src="/logo.png" alt="Edge Works logo"></a><nav>
       <a href="/services">Services</a><a href="/pricing">Pricing</a>
-      <a href="/about">About</a><a href="/contact">Contact</a></nav></header>`;
+      <a href="/about">About</a><a href="/contact">Contact</a></nav>
+      <a href="tel:+12175550188">Call (217) 555-0188</a></header>`;
   const page = (title: string, body: string) =>
-    html(`${nav}<main><h1>${title}</h1>${body}</main><footer><a href="https://facebook.com/edgeworks">Facebook</a></footer>`,
-      `<title>${title} | Edge Works Sharpening</title>`);
+    html(
+      `${nav}<main><h1>${title}</h1>${body}</main><footer>
+        <address>400 Elm St, Springfield, IL 62701</address>
+        <a href="https://facebook.com/edgeworks">Facebook</a><p>© 2024 Edge Works Sharpening</p></footer>`,
+      `<title>${title} | Edge Works Sharpening</title><link rel="stylesheet" href="/site.css">`,
+    );
 
   const routes: Record<string, Handler> = {
     '/robots.txt': text(200, 'User-agent: *\nDisallow: /private\n\nSitemap: /sitemap.xml\n'),
@@ -22,11 +27,13 @@ export function sharpenerSite(getPort: () => number): { routes: Record<string, H
           `<url><loc>https://evil.example/elsewhere</loc></url></urlset>`,
       );
     },
+    '/site.css': text(200, ':root{--brand-primary:#9c3d12}.btn{background:#9c3d12;color:#fff}body{font-family:"Lora",serif}', 'text/css'),
     '/services': page(
       'Knife sharpening services',
-      `<p>Kitchen knives, scissors and garden tools.</p><a href="/old-page">Our story</a><a href="/menu.pdf">Price list (PDF)</a>`,
+      `<ul><li>Kitchen knives</li><li>Scissors</li><li>Garden tools</li></ul>
+       <p>We do not sharpen serrated knives.</p><a href="/old-page">Our story</a><a href="/menu.pdf">Price list (PDF)</a>`,
     ),
-    '/pricing': page('Pricing', '<p>See our current rates.</p><a href="/missing">Gift cards</a>'),
+    '/pricing': page('Pricing', '<ul><li>Kitchen knives $8 each</li></ul><a href="/missing">Gift cards</a>'),
     '/about': page('About us', '<p>Family-run sharpening shop.</p>'),
     '/contact': page('Contact', '<p>Call or text to book.</p><a href="/offsite">Book online</a>'),
     '/faq': page('FAQ', '<p>How long does sharpening take?</p>'),

@@ -7,6 +7,7 @@ import { runCrawlTick } from '../../core/crawl/engine';
 import { createSafeFetcher, type SafeFetcher } from '../../core/crawl/fetcher';
 import { recordActivity } from '../activity';
 import { createCrawlStore } from '../crawl/store';
+import { EXTRACT_JOB, failExtraction, queueExtraction, runExtraction } from '../facts/extraction';
 import type { Database } from '../db/client';
 import { crawlRuns, prospects } from '../db/schema';
 import { log } from '../log';
@@ -47,8 +48,15 @@ const crawlHandler: JobHandler = async (job, { db, budgetMs, createFetcher, cloc
     );
     if (result.status === 'continue') return result;
 
-    const prospectStatus = result.runStatus === 'completed' ? 'analyzed' : result.runStatus === 'failed' ? 'failed' : 'new';
-    await db.update(prospects).set({ status: prospectStatus }).where(eq(prospects.id, run.prospectId));
+    if (result.runStatus === 'completed') {
+      // Next pipeline stage: extract business facts. The prospect stays `analyzing` until it finishes.
+      await queueExtraction(db, { workspaceId: run.workspaceId, prospectId: run.prospectId, crawlRunId, requestedBy: run.requestedBy });
+    } else {
+      await db
+        .update(prospects)
+        .set({ status: result.runStatus === 'failed' ? 'failed' : 'new' })
+        .where(eq(prospects.id, run.prospectId));
+    }
     await recordActivity(db, {
       workspaceId: run.workspaceId,
       prospectId: run.prospectId,
@@ -71,8 +79,22 @@ const crawlHandler: JobHandler = async (job, { db, budgetMs, createFetcher, cloc
   }
 };
 
+const extractPayload = z.object({ extractionRunId: z.uuid() });
+
+const extractHandler: JobHandler = async (job, { db, createFetcher }) => {
+  const { extractionRunId } = extractPayload.parse(job.payload);
+  try {
+    await runExtraction(db, extractionRunId, createFetcher);
+    return { status: 'done' };
+  } catch (error) {
+    if (job.attempts >= job.maxAttempts) await failExtraction(db, extractionRunId, 'Fact extraction stopped because of an internal error.');
+    throw error;
+  }
+};
+
 export const jobHandlers: Record<string, JobHandler> = {
   [CRAWL_JOB]: crawlHandler,
+  [EXTRACT_JOB]: extractHandler,
 };
 
 export const defaultJobContextFactory = (db: Database, budgetMs: number): JobContext => ({

@@ -8,6 +8,7 @@ import { ZodError } from 'zod';
 import { requireOperator } from '@/server/auth/operator';
 import { cancelCrawl, createProspect, ServiceError, startCrawl } from '@/server/crawl/service';
 import { getDb } from '@/server/db/client';
+import { reviewFact, startReExtraction } from '@/server/facts/service';
 import { isUuid } from '@/server/http';
 import { processJobsInBackground } from '@/server/jobs/runner';
 import { log } from '@/server/log';
@@ -65,6 +66,36 @@ export async function cancelAction(prospectId: string): Promise<ActionState> {
   if (!isUuid(prospectId)) return { error: 'Prospect not found.' };
   try {
     await cancelCrawl(await getDb(), operator, prospectId);
+  } catch (error) {
+    return { error: messageFor(error) };
+  }
+  revalidatePath(`/prospects/${prospectId}`);
+  return {};
+}
+
+export async function reviewFactAction(
+  prospectId: string,
+  factId: string,
+  status: 'unverified' | 'verified' | 'rejected',
+): Promise<ActionState> {
+  const operator = await requireOperator();
+  if (!isUuid(prospectId) || !isUuid(factId)) return { error: 'Fact not found.' };
+  try {
+    await reviewFact(await getDb(), operator, { factId, status });
+  } catch (error) {
+    return { error: messageFor(error) };
+  }
+  revalidatePath(`/prospects/${prospectId}`);
+  return {};
+}
+
+export async function reExtractAction(prospectId: string): Promise<ActionState> {
+  const operator = await requireOperator();
+  if (!isUuid(prospectId)) return { error: 'Prospect not found.' };
+  try {
+    const db = await getDb();
+    await startReExtraction(db, operator, prospectId);
+    after(() => processJobsInBackground(db, 240_000));
   } catch (error) {
     return { error: messageFor(error) };
   }

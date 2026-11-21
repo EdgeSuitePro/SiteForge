@@ -15,6 +15,13 @@
       "when": 1791134634413,
       "tag": "0001_crawling",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795268436502,
+      "tag": "0002_business_facts",
+      "breakpoints": true
     }
   ]
 }

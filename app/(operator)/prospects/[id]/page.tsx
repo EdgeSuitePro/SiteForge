@@ -4,12 +4,15 @@ import { notFound } from 'next/navigation';
 import { requireOperator } from '@/server/auth/operator';
 import { getLatestCrawlProgress, getProspect, ServiceError } from '@/server/crawl/service';
 import { getDb } from '@/server/db/client';
+import { getBusinessProfile } from '@/server/facts/service';
 import { isUuid } from '@/server/http';
+import { AutoRefresh } from '@/ui/auto-refresh';
+import { BusinessProfilePanel } from '@/ui/business-profile';
 import { CrawlProgressPanel } from '@/ui/crawl-progress';
 import { PROSPECT_STATUS_LABEL } from '@/ui/labels';
 import { StatusPill, prospectTone } from '@/ui/status-pill';
 
-import { analyzeAction, cancelAction } from '../actions';
+import { analyzeAction, cancelAction, reExtractAction, reviewFactAction } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,9 +20,24 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: `Prospect ${(await params).id.slice(0, 8)}` };
 }
 
-export default async function ProspectPage({ params }: { params: Promise<{ id: string }> }) {
+const TABS = [
+  { key: 'profile', label: 'Business profile' },
+  { key: 'crawl', label: 'Crawl' },
+] as const;
+
+/** Server data → plain JSON for client components (Dates become strings). */
+const serialize = <T,>(value: T) => JSON.parse(JSON.stringify(value));
+
+export default async function ProspectPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const operator = await requireOperator();
   const { id } = await params;
+  const { tab: requestedTab } = await searchParams;
   if (!isUuid(id)) notFound();
   const db = await getDb();
 
@@ -30,10 +48,19 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
     if (error instanceof ServiceError && error.status === 404) notFound();
     throw error;
   }
-  const progress = await getLatestCrawlProgress(db, operator.workspaceId, id);
+  const [progress, profile] = await Promise.all([
+    getLatestCrawlProgress(db, operator.workspaceId, id),
+    getBusinessProfile(db, operator.workspaceId, id),
+  ]);
+
+  const hasProfile = profile?.run.status === 'completed';
+  const tab = requestedTab === 'crawl' || requestedTab === 'profile' ? requestedTab : hasProfile ? 'profile' : 'crawl';
+  const crawlActive = progress?.run.status === 'queued' || progress?.run.status === 'running';
+  const extractionActive = Boolean(profile?.pending) || profile?.run.status === 'queued' || profile?.run.status === 'running';
 
   return (
     <main>
+      <AutoRefresh active={crawlActive || extractionActive} />
       <Link href="/prospects" className="text-sm text-ink-soft hover:text-ink">
         ← Prospects
       </Link>
@@ -53,12 +80,38 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
         </p>
       )}
 
-      <CrawlProgressPanel
-        prospectId={prospect.id}
-        initial={progress ? JSON.parse(JSON.stringify(progress)) : null}
-        analyze={analyzeAction.bind(null, prospect.id)}
-        cancel={cancelAction.bind(null, prospect.id)}
-      />
+      <nav aria-label="Prospect sections" className="mt-6 flex gap-1 border-b border-line">
+        {TABS.map((entry) => (
+          <Link
+            key={entry.key}
+            href={`/prospects/${prospect.id}?tab=${entry.key}`}
+            aria-current={tab === entry.key ? 'page' : undefined}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              tab === entry.key ? 'border-steel text-ink' : 'border-transparent text-ink-soft hover:text-ink'
+            }`}
+          >
+            {entry.label}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="mt-6">
+        {tab === 'profile' ? (
+          <BusinessProfilePanel
+            view={profile ? serialize(profile) : null}
+            crawl={progress ? serialize(progress) : null}
+            review={reviewFactAction.bind(null, prospect.id)}
+            reExtract={reExtractAction.bind(null, prospect.id)}
+          />
+        ) : (
+          <CrawlProgressPanel
+            prospectId={prospect.id}
+            initial={progress ? serialize(progress) : null}
+            analyze={analyzeAction.bind(null, prospect.id)}
+            cancel={cancelAction.bind(null, prospect.id)}
+          />
+        )}
+      </div>
     </main>
   );
 }

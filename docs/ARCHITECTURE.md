@@ -87,3 +87,30 @@ Analyze (server action) ──insert crawl_run + job──► jobs table
   extractors can be re-run without re-crawling.
 - **Outcomes recorded per page**: crawled, error (HTTP status — later used for broken-link findings),
   skipped with a reason (robots, not HTML, off-site redirect, duplicate redirect, limits).
+
+## Business facts (Phase 2 — implemented)
+
+```
+crawl completed ──► extract job ──► parse stored HTML (extract@1)
+                                   ├─► deterministic fact extractors (facts@1, sharpening-taxonomy@1)
+                                   ├─► brand analysis (brand@1; ≤6 stylesheets via the SSRF-safe fetcher)
+                                   └─► extraction_runs / page_extractions / business_facts
+```
+
+- **Facts only from the site.** Every fact stores its method (`structured_data`, `markup`, `text_pattern`),
+  confidence, occurrence counts, prominence (homepage/header) and up to 5 evidence items
+  (page URL, verbatim snippet, locator). Missing information is shown as **Not found** — never inferred.
+- **Extractors** (`src/core/facts/extractors`): identity (name, logo), contact (phone, email, socials,
+  booking providers, contact methods), location (address, city/state, service-area statements, hours),
+  offering (services via the taxonomy, prices, turnaround), trust (reviews, FAQ, owner, years claims,
+  schema.org types).
+- **Negation**: "we do not sharpen serrated knives" becomes `service_not_offered`; sites that both claim
+  and disclaim a service are flagged as conflicts.
+- **Guards against invented claims**: navigation-only mentions are ignored; customer quotes are low
+  confidence; turnaround phrases need independent supporting context; order numbers/dates are not phones;
+  share links and site-builder profiles are not the business's social accounts.
+- **Operator review**: verify / reject / undo per fact; decisions carry forward to later extraction runs
+  for the same fact. Rejected facts leave the profile.
+- **Re-extraction** re-reads stored HTML without re-crawling (e.g. after an extractor version bump).
+- `page_extractions` stores each page's parsed structure (headings, meta, links, images, forms, JSON-LD,
+  text blocks) as the input for Phase 3 audit rules.

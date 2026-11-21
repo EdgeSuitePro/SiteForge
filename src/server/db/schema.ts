@@ -29,7 +29,10 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import type { BrandProfile } from '../../core/brand/brand';
 import type { CrawlLimits } from '../../core/crawl/limits';
+import type { PageDocument } from '../../core/extract/document';
+import type { Confidence, Evidence, FactMethod, FactType } from '../../core/facts/types';
 
 export const siteforge = pgSchema('siteforge');
 
@@ -342,6 +345,126 @@ export const jobs = siteforge
         'jobs_status_check',
         sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'canceled')`,
       ),
+    ],
+  )
+  .enableRLS();
+
+// ---------------------------------------------------------------------------------------------
+// Business facts (Phase 2)
+// ---------------------------------------------------------------------------------------------
+
+export const EXTRACTION_STATUSES = ['queued', 'running', 'completed', 'failed'] as const;
+export type ExtractionStatus = (typeof EXTRACTION_STATUSES)[number];
+
+export interface ExtractionStats {
+  pages: number;
+  facts: number;
+  byType: Record<string, number>;
+  stylesheetsFetched: number;
+}
+
+/** One deterministic extraction pass over a crawl. Re-runnable without re-crawling. */
+export const extractionRuns = siteforge
+  .table(
+    'extraction_runs',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id')
+        .notNull()
+        .references(() => prospects.id, { onDelete: 'cascade' }),
+      crawlRunId: uuid('crawl_run_id')
+        .notNull()
+        .references(() => crawlRuns.id, { onDelete: 'cascade' }),
+      status: text('status').$type<ExtractionStatus>().notNull().default('queued'),
+      extractorVersion: text('extractor_version').notNull(),
+      factsVersion: text('facts_version').notNull(),
+      taxonomyVersion: text('taxonomy_version').notNull(),
+      brandVersion: text('brand_version').notNull(),
+      brand: jsonb('brand').$type<BrandProfile>(),
+      stats: jsonb('stats').$type<ExtractionStats>(),
+      error: text('error'),
+      requestedBy: uuid('requested_by'),
+      startedAt: timestamp('started_at', { withTimezone: true }),
+      finishedAt: timestamp('finished_at', { withTimezone: true }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      index('extraction_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
+      check('extraction_runs_status_check', sql`${table.status} in ('queued', 'running', 'completed', 'failed')`),
+    ],
+  )
+  .enableRLS();
+
+/** Parsed page structure (minus raw CSS) — input for audit rules in Phase 3. */
+export type StoredPageDocument = Omit<PageDocument, 'inlineCss'>;
+
+export const pageExtractions = siteforge
+  .table(
+    'page_extractions',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      extractionRunId: uuid('extraction_run_id')
+        .notNull()
+        .references(() => extractionRuns.id, { onDelete: 'cascade' }),
+      pageId: uuid('page_id')
+        .notNull()
+        .references(() => crawlPages.id, { onDelete: 'cascade' }),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      url: text('url').notNull(),
+      depth: integer('depth').notNull(),
+      document: jsonb('document').$type<StoredPageDocument>().notNull(),
+      createdAt: createdAt(),
+    },
+    (table) => [uniqueIndex('page_extractions_run_page_key').on(table.extractionRunId, table.pageId)],
+  )
+  .enableRLS();
+
+export const FACT_STATUSES = ['unverified', 'verified', 'rejected'] as const;
+export type FactReviewStatus = (typeof FACT_STATUSES)[number];
+
+export const businessFacts = siteforge
+  .table(
+    'business_facts',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id')
+        .notNull()
+        .references(() => prospects.id, { onDelete: 'cascade' }),
+      extractionRunId: uuid('extraction_run_id')
+        .notNull()
+        .references(() => extractionRuns.id, { onDelete: 'cascade' }),
+      factType: text('fact_type').$type<FactType>().notNull(),
+      factKey: text('fact_key').notNull(),
+      value: jsonb('value').$type<Record<string, unknown>>().notNull(),
+      display: text('display').notNull(),
+      method: text('method').$type<FactMethod>().notNull(),
+      confidence: text('confidence').$type<Confidence>().notNull(),
+      occurrences: integer('occurrences').notNull(),
+      pageCount: integer('page_count').notNull(),
+      onHomepage: boolean('on_homepage').notNull(),
+      inHeader: boolean('in_header').notNull(),
+      evidence: jsonb('evidence').$type<Evidence[]>().notNull(),
+      status: text('status').$type<FactReviewStatus>().notNull().default('unverified'),
+      reviewedBy: uuid('reviewed_by'),
+      reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+      reviewNote: text('review_note'),
+      createdAt: createdAt(),
+    },
+    (table) => [
+      uniqueIndex('business_facts_run_type_key').on(table.extractionRunId, table.factType, table.factKey),
+      index('business_facts_prospect_idx').on(table.prospectId, table.extractionRunId),
+      check('business_facts_status_check', sql`${table.status} in ('unverified', 'verified', 'rejected')`),
+      check('business_facts_method_check', sql`${table.method} in ('structured_data', 'markup', 'text_pattern', 'ai_extracted', 'operator')`),
+      check('business_facts_confidence_check', sql`${table.confidence} in ('high', 'medium', 'low')`),
     ],
   )
   .enableRLS();
