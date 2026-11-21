@@ -162,6 +162,23 @@ describe('extractFacts — identity and trust', () => {
   });
 });
 
+describe('owner names', () => {
+  it.each([
+    ['My name is Jason Miller and I sharpen knives.', 'Jason Miller'],
+    ["Hi, I'm Dana — I started sharpening in 2015.", 'Dana'],
+    ['Owner: Pat Lee', 'Pat Lee'],
+    ['Founded by Maria Gomez in 2009.', 'Maria Gomez'],
+  ])('finds the name in %s', (text, name) => {
+    const found = extractFacts([page('o', 'https://o.example/about', 1, `<main><p>${text}</p></main>`)]).filter((fact) => fact.type === 'owner_name');
+    expect(found.map((fact) => fact.display)).toEqual([name]);
+  });
+
+  it.each(["We're proud to serve you.", "I'm Proud of our work.", 'Meet The team at our shop.'])('does not invent a name from %s', (text) => {
+    const found = extractFacts([page('o', 'https://o.example/about', 1, `<main><p>${text}</p></main>`)]).filter((fact) => fact.type === 'owner_name');
+    expect(found).toEqual([]);
+  });
+});
+
 describe('buildProfile', () => {
   const asProfile = (list: Fact[]): ProfileFact[] => list.map((fact, index) => ({ ...fact, id: String(index), status: 'unverified' }));
 

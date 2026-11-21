@@ -53,7 +53,7 @@ describe('crawl → extract pipeline', () => {
     await drain();
 
     const view = await getBusinessProfile(handle.db, operator.workspaceId, prospect.id);
-    expect(view?.run).toMatchObject({ status: 'completed', extractorVersion: 'extract@1', factsVersion: 'facts@1', taxonomyVersion: 'sharpening-taxonomy@1' });
+    expect(view?.run).toMatchObject({ status: 'completed', extractorVersion: 'extract@1', factsVersion: 'facts@1', taxonomyVersion: 'sharpening-taxonomy@2' });
     const field = (name: string) => view!.profile.find((entry) => entry.field === name)!;
 
     expect(field('phone').primary).toMatchObject({ display: '(217) 555-0188', inHeader: true });

@@ -7,6 +7,7 @@ import { runCrawlTick } from '../../core/crawl/engine';
 import { createSafeFetcher, type SafeFetcher } from '../../core/crawl/fetcher';
 import { recordActivity } from '../activity';
 import { createCrawlStore } from '../crawl/store';
+import { AUDIT_JOB, failAudit, runAuditJob } from '../audit/audit';
 import { EXTRACT_JOB, failExtraction, queueExtraction, runExtraction } from '../facts/extraction';
 import type { Database } from '../db/client';
 import { crawlRuns, prospects } from '../db/schema';
@@ -92,9 +93,23 @@ const extractHandler: JobHandler = async (job, { db, createFetcher }) => {
   }
 };
 
+const auditPayload = z.object({ auditRunId: z.uuid() });
+
+const auditHandler: JobHandler = async (job, { db }) => {
+  const { auditRunId } = auditPayload.parse(job.payload);
+  try {
+    await runAuditJob(db, auditRunId);
+    return { status: 'done' };
+  } catch (error) {
+    if (job.attempts >= job.maxAttempts) await failAudit(db, auditRunId, 'The audit stopped because of an internal error.');
+    throw error;
+  }
+};
+
 export const jobHandlers: Record<string, JobHandler> = {
   [CRAWL_JOB]: crawlHandler,
   [EXTRACT_JOB]: extractHandler,
+  [AUDIT_JOB]: auditHandler,
 };
 
 export const defaultJobContextFactory = (db: Database, budgetMs: number): JobContext => ({

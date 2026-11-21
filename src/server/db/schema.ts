@@ -23,12 +23,14 @@ import {
   integer,
   jsonb,
   pgSchema,
+  real,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import type { CategoryScore, Category, Outcome, Severity } from '../../core/audit/types';
 import type { BrandProfile } from '../../core/brand/brand';
 import type { CrawlLimits } from '../../core/crawl/limits';
 import type { PageDocument } from '../../core/extract/document';
@@ -465,6 +467,95 @@ export const businessFacts = siteforge
       check('business_facts_status_check', sql`${table.status} in ('unverified', 'verified', 'rejected')`),
       check('business_facts_method_check', sql`${table.method} in ('structured_data', 'markup', 'text_pattern', 'ai_extracted', 'operator')`),
       check('business_facts_confidence_check', sql`${table.confidence} in ('high', 'medium', 'low')`),
+    ],
+  )
+  .enableRLS();
+
+// ---------------------------------------------------------------------------------------------
+// Deterministic audit (Phase 3)
+// ---------------------------------------------------------------------------------------------
+
+export const AUDIT_STATUSES = ['queued', 'running', 'completed', 'failed'] as const;
+export type AuditStatus = (typeof AUDIT_STATUSES)[number];
+
+/** One audit = one ruleset version applied to one extraction run (and its operator decisions). */
+export const auditRuns = siteforge
+  .table(
+    'audit_runs',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id')
+        .notNull()
+        .references(() => prospects.id, { onDelete: 'cascade' }),
+      extractionRunId: uuid('extraction_run_id')
+        .notNull()
+        .references(() => extractionRuns.id, { onDelete: 'cascade' }),
+      crawlRunId: uuid('crawl_run_id')
+        .notNull()
+        .references(() => crawlRuns.id, { onDelete: 'cascade' }),
+      status: text('status').$type<AuditStatus>().notNull().default('queued'),
+      rulesetVersion: text('ruleset_version').notNull(),
+      overallScore: integer('overall_score'),
+      categories: jsonb('categories').$type<CategoryScore[]>(),
+      caveats: jsonb('caveats').$type<string[]>().notNull().default([]),
+      /** Latest fact review time included in this audit (to detect later operator changes). */
+      factsReviewedThrough: timestamp('facts_reviewed_through', { withTimezone: true }),
+      error: text('error'),
+      requestedBy: uuid('requested_by'),
+      startedAt: timestamp('started_at', { withTimezone: true }),
+      finishedAt: timestamp('finished_at', { withTimezone: true }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      index('audit_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
+      check('audit_runs_status_check', sql`${table.status} in ('queued', 'running', 'completed', 'failed')`),
+      check('audit_runs_score_check', sql`${table.overallScore} is null or (${table.overallScore} between 0 and 100)`),
+    ],
+  )
+  .enableRLS();
+
+export const auditFindings = siteforge
+  .table(
+    'audit_findings',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      auditRunId: uuid('audit_run_id')
+        .notNull()
+        .references(() => auditRuns.id, { onDelete: 'cascade' }),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id')
+        .notNull()
+        .references(() => prospects.id, { onDelete: 'cascade' }),
+      ruleId: text('rule_id').notNull(),
+      category: text('category').$type<Category>().notNull(),
+      /** deterministic now; 'semantic' (AI-assisted, with model provenance) arrives in Phase 4. */
+      source: text('source').$type<'deterministic' | 'semantic'>().notNull(),
+      outcome: text('outcome').$type<Outcome>().notNull(),
+      severity: text('severity').$type<Severity>().notNull(),
+      title: text('title').notNull(),
+      detail: text('detail').notNull(),
+      evidence: jsonb('evidence').$type<Evidence[]>().notNull(),
+      whyItMatters: text('why_it_matters').notNull(),
+      recommendedFix: text('recommended_fix').notNull(),
+      requiresOwnerConfirmation: boolean('requires_owner_confirmation').notNull().default(false),
+      pointsPossible: real('points_possible').notNull(),
+      pointsAwarded: real('points_awarded').notNull(),
+      priority: real('priority').notNull(),
+      sortOrder: integer('sort_order').notNull(),
+      createdAt: createdAt(),
+    },
+    (table) => [
+      uniqueIndex('audit_findings_run_rule_key').on(table.auditRunId, table.ruleId),
+      index('audit_findings_run_order_idx').on(table.auditRunId, table.sortOrder),
+      check('audit_findings_outcome_check', sql`${table.outcome} in ('pass', 'partial', 'fail', 'not_applicable', 'unknown')`),
+      check('audit_findings_severity_check', sql`${table.severity} in ('high', 'medium', 'low')`),
+      check('audit_findings_source_check', sql`${table.source} in ('deterministic', 'semantic')`),
     ],
   )
   .enableRLS();

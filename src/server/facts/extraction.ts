@@ -24,6 +24,7 @@ import {
 } from '../db/schema';
 import { enqueueJob } from '../jobs/queue';
 import { log } from '../log';
+import { queueAudit } from '../audit/audit';
 
 export const EXTRACT_JOB = 'extract';
 
@@ -154,7 +155,15 @@ export async function runExtraction(db: Database, extractionRunId: string, creat
       .update(extractionRuns)
       .set({ status: 'completed', brand, stats, finishedAt: new Date() })
       .where(eq(extractionRuns.id, run.id));
-    await tx.update(prospects).set({ status: 'analyzed' }).where(eq(prospects.id, run.prospectId));
+  });
+
+  // Next pipeline stage: the deterministic audit marks the prospect analyzed when it finishes.
+  await queueAudit(db, {
+    workspaceId: run.workspaceId,
+    prospectId: run.prospectId,
+    extractionRunId: run.id,
+    crawlRunId: run.crawlRunId,
+    requestedBy: run.requestedBy,
   });
 
   await recordActivity(db, {

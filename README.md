@@ -22,7 +22,8 @@ modifies the prospect's existing website.
 | 0 | Scaffold: Next.js + TypeScript, Drizzle + PGlite, migrations, dev login, CI | ✅ |
 | 1 | Hardened crawler, background jobs, prospects + crawl progress UI | ✅ |
 | 2 | Business facts with evidence, brand extraction, operator review | ✅ |
-| 3–6 | Deterministic audit + score, AI analysis, concepts + previews, acceptance | planned |
+| 3 | Deterministic audit + ESP Website Opportunity Score | ✅ |
+| 4–6 | AI analysis, concepts + previews, acceptance | planned |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

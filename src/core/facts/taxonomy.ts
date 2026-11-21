@@ -3,7 +3,7 @@
  * the taxonomy version they were produced with. A match means "the site mentions this"; the
  * evidence snippet is always kept so an operator can confirm it.
  */
-export const TAXONOMY_VERSION = 'sharpening-taxonomy@1';
+export const TAXONOMY_VERSION = 'sharpening-taxonomy@2';
 
 export type ServiceCategory = 'knives' | 'tools' | 'specialty' | 'repair' | 'service_model' | 'commercial' | 'retail' | 'education';
 
@@ -31,7 +31,7 @@ export const SERVICES: ServiceDefinition[] = [
   { key: 'knife_repair', label: 'Knife repair (chips, tips, reprofiling)', category: 'repair', patterns: [/\bchip(ped)? (repair|removal)\b/i, /\b(broken )?tip repair\b/i, /\bknife repair\b/i, /\bre-?profil(e|ing)\b/i, /\brepair (chipped|broken|damaged)\b/i] },
   { key: 'rehandling', label: 'Rehandling', category: 'repair', patterns: [/\bre-?handl(e|es|ing)\b/i] },
   { key: 'drop_off', label: 'Drop-off', category: 'service_model', patterns: [/\bdrop[- ]?off\b/i, /\bdrop ?box\b/i, /\blockers?\b/i] },
-  { key: 'mail_in', label: 'Mail-in service', category: 'service_model', patterns: [/\bmail[- ]in\b/i, /\b(ship|mail|send) (us )?your (knives|blades|tools|scissors)\b/i, /\bshipping (label|kit)\b/i] },
+  { key: 'mail_in', label: 'Mail-in service', category: 'service_model', patterns: [/\bmail[- ]in\b/i, /\b(ship|mail|send) (us )?your (knives|blades|tools|scissors)\b/i, /\b(mail|ship|send) (them|it|your \w+) (in|to us)\b/i, /\b(prepaid )?shipping (label|kit|box)\b/i, /\bprepaid label\b/i] },
   { key: 'mobile', label: 'Mobile / on-site sharpening', category: 'service_model', patterns: [/\bmobile (knife )?sharpening\b/i, /\bwe come to you\b/i, /\bon[- ]site sharpening\b/i, /\bsharpening (van|truck|trailer)\b/i] },
   { key: 'farmers_market', label: "Farmers' market sharpening", category: 'service_model', patterns: [/\bfarmers'? markets?\b/i] },
   { key: 'while_you_wait', label: 'While-you-wait service', category: 'service_model', patterns: [/\bwhile you wait\b/i] },

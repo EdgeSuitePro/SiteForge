@@ -11,8 +11,12 @@ const REVIEW_WIDGET_HOSTS: Array<[RegExp, string]> = [
 ];
 const REVIEW_HEADING = /\b(testimonials?|reviews?|what (our )?(customers|clients) (are )?say(ing)?|kind words|happy customers)\b/i;
 const FAQ_HEADING = /\b(faqs?|frequently asked questions?|common questions)\b/i;
+/**
+ * Case-sensitive on purpose (names must be capitalised), so lead-in phrases spell out both cases:
+ * "My name is Jason Miller", "I'm Jason", "Owner: Jason Miller", "Founded by Jason Miller", "Meet Jason".
+ */
 const OWNER =
-  /\b(?:my name is|i'?m|i am|owner(?:\s*(?:and|&)\s*(?:sharpener|founder|operator))?\s*[,:–-]?|founded by|meet)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+){0,2})\b/;
+  /(?:^|[^\w])(?:[Mm]y name is|I'?m|I am|[Oo]wner(?:\s*(?:and|&)\s*(?:sharpener|founder|operator))?\s*[,:–-]?|[Ff]ounded by|[Mm]eet)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+){0,2})\b/;
 const NOT_A_NAME = new Set(['The', 'Our', 'We', 'Your', 'This', 'Here', 'Happy', 'Glad', 'Proud', 'Excited', 'Sharp', 'Professional', 'Local', 'Family', 'Available', 'Located', 'Open', 'Not', 'Also']);
 const YEARS =
   /\b(?:(?:since|established|est\.?|founded(?: in)?|serving [\w\s]{1,30} since)\s+((?:19|20)\d{2})|((?:\d{1,2}|twenty|thirty|forty|fifty)\+?\s+years?)\s+(?:of\s+)?(?:experience|in business|sharpening|serving))\b/i;
