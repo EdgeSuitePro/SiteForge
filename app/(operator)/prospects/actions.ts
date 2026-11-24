@@ -10,6 +10,7 @@ import { cancelCrawl, createProspect, ServiceError, startCrawl } from '@/server/
 import { getDb } from '@/server/db/client';
 import { reviewFact, startReExtraction } from '@/server/facts/service';
 import { startReAudit } from '@/server/audit/service';
+import { startConceptGeneration } from '@/server/concepts/service';
 import { isUuid } from '@/server/http';
 import { processJobsInBackground } from '@/server/jobs/runner';
 import { log } from '@/server/log';
@@ -110,6 +111,20 @@ export async function reAuditAction(prospectId: string): Promise<ActionState> {
   try {
     const db = await getDb();
     await startReAudit(db, operator, prospectId);
+    after(() => processJobsInBackground(db, 240_000));
+  } catch (error) {
+    return { error: messageFor(error) };
+  }
+  revalidatePath(`/prospects/${prospectId}`);
+  return {};
+}
+
+export async function generateConceptsAction(prospectId: string): Promise<ActionState> {
+  const operator = await requireOperator();
+  if (!isUuid(prospectId)) return { error: 'Prospect not found.' };
+  try {
+    const db = await getDb();
+    await startConceptGeneration(db, operator, prospectId);
     after(() => processJobsInBackground(db, 240_000));
   } catch (error) {
     return { error: messageFor(error) };

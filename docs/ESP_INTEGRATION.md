@@ -12,7 +12,9 @@ SiteForge prospect → audit → concepts → chosen concept → handoff → ESP
 - **Prospect identity** — business name, website domain, known contact, operator notes.
 - **Verified facts only** — each with source URL, evidence snippet, extraction method.
 - **Audit summary** — ruleset version, category and overall scores, top findings.
-- **Chosen concept** — strategy, content document, design tokens, renderer version.
+- **Chosen concept** — strategy, checked content document (`concept@1`), frozen fact catalog, design
+  tokens, renderer version (`render@1`) and claim report. CTA *intents* (`book`, `call`, `text`,
+  `drop_off`, `mail_in`, …) are where ESP reservations, intake and contact flows plug in.
 - **CTA intents** — `reserve`, `call`, `text`, `drop_off`, `mail_in`, `contact`; ESP binds them to its own endpoints.
 - **Consent records** — who approved migration and asset use, and when.
 

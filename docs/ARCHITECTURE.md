@@ -57,7 +57,7 @@ prompt id@version, model, and renderer version. Scoring rules and prompts are ve
 - Phase 2: `business_facts`.
 - Phase 3: `audit_runs`, `audit_findings`.
 - Phase 4: `model_runs`.
-- Phase 5: `concepts`, `share_links`; preview host (`*.preview.edgesuitepro.com`).
+- Phase 5: `concepts` (implemented). `share_links` and the separate preview host are deferred until prospect-facing sharing (see below).
 - Later: `esp_handoffs` (see ESP_INTEGRATION.md).
 
 ## Crawler and jobs (Phase 1 — implemented)
@@ -137,3 +137,46 @@ crawl completed ──► extract job ──► parse stored HTML (extract@1)
 - **Accounting**: every call (including failures and budget skips) is a `model_runs` row: task, tier,
   requested/served model, prompt id@version, input hash, tokens, estimated cost (`prices@…`), latency.
   A per-prospect rolling-24h budget is enforced before any non-mock call.
+
+## Concepts and previews (Phase 5 — implemented)
+
+```
+facts (non-rejected; low-confidence only if verified) ──► frozen fact catalog (refs f1…fn)
+audit problems ─────────────────────────────────────────► concept brief (strategy, CTAs available, focus)
+            strong-tier model (concept-gen@1) or mock/fallback fact-only draft
+                                 │  concept document: copy + fact refs + CTA intents (never HTML)
+                                 ▼
+            normalize (clamp lengths) ──► claim check (claim-check@1) ──► design tokens (WCAG AA)
+                                 ▼
+            deterministic renderer (render@1): local_growth | craftsman | fastest_path
+```
+
+- **Three strategies** (`src/core/concepts/strategies.ts`) with their own required/excluded sections and
+  three genuinely different renderers (`src/core/render/templates/*`): information order, layout,
+  typography and calls to action all differ; brand colour is shared.
+- **Facts are inserted by the renderer**, not typed by the model: service names, prices, phone, email,
+  address, hours, service areas. The model writes copy and references facts by `ref`.
+- **Claim checker** (`src/core/concepts/claims.ts`): prices, numbers, years, experience, turnaround,
+  guarantees, credentials/awards, superlatives, ratings/counts, testimonials/quotations, place names,
+  services (including ones the site says it does *not* offer), contact details, and 10-word verbatim
+  copies of the current site. An unsupported sentence becomes a visible operator note; metadata falls
+  back to safe defaults. Invalid fact refs, unavailable CTAs and excluded sections are repaired. Every
+  change is recorded in the concept's `claim_report`.
+- **Missing information** is written as `{{missing: …}}` by the copywriter and rendered as an operator
+  note ("✎ Missing: real customer reviews"), never as business information.
+- **AI failure never blocks the demo**: a non-transient model failure (refusal, invalid output, budget,
+  outage) falls back to the deterministic fact-only draft, labelled as such.
+- **Storage** (`concepts`): checked content, raw model output, claim report, frozen fact catalog, design
+  tokens, schema/renderer/claim-check/prompt versions, model run, render hash. HTML is not stored;
+  rendering is reproducible. Each "Generate" creates a new generation; earlier ones are kept.
+- **Delivery** (V1, operator-only): `/preview/concept/[id]` requires an operator session in the same
+  workspace. `?mode=clean` hides operator notes. Compare view (`/prospects/[id]/compare`) shows the
+  previews in sandboxed iframes (desktop/mobile, all three side by side on mobile). Presentation
+  (`/prospects/[id]/present`) shows score, findings with evidence, before/after, concepts and
+  opportunities, with a "your website has not been modified" banner.
+- **"Book" CTAs** without an existing booking system point at an EdgeSuite Pro reservation block —
+  the integration point for ESP, clearly marked as not active in the preview.
+- **Deferred:** prospect-facing share links (hashed tokens, expiry, revocation, view log) and serving
+  previews from a separate origin (`*.preview.edgesuitepro.com` or a second Vercel domain). The preview
+  route is host-agnostic, so this is routing + a token table, not a redesign. Logo use (off by default)
+  and multi-page concepts are also deferred.

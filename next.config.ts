@@ -21,7 +21,11 @@ const nextConfig: NextConfig = {
     '/**': ['./db/migrations/**/*'],
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }];
+    return [
+      // Concept previews set their own stricter headers (they must be frameable by SiteForge itself).
+      { source: '/((?!preview/).*)', headers: securityHeaders },
+      { source: '/preview/:path*', headers: securityHeaders.filter((header) => header.key !== 'X-Frame-Options') },
+    ];
   },
 };
 

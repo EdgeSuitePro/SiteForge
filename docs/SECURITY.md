@@ -57,6 +57,20 @@
 - Cost control: per-prospect rolling-24h budget (`SITEFORGE_AI_BUDGET_USD`), capped input size, and
   every call recorded in `model_runs`.
 
+## Phase 5 (concepts and previews) — implemented
+
+- Concept pages are produced by deterministic renderers from data; all text is HTML-escaped and links
+  are limited to `https:`/`http:`, `tel:`, `sms:`, `mailto:` and in-page anchors (`safeHref`).
+- Preview responses: `Content-Security-Policy: default-src 'none'; style-src 'sha256-…'` (the single
+  inline stylesheet, by hash), `img-src data:`, `base-uri 'none'`, `form-action 'none'`,
+  `frame-ancestors 'self'`; plus `X-Robots-Tag: noindex, nofollow, noarchive`, a robots meta tag,
+  `Referrer-Policy: no-referrer`, `Cache-Control: private, no-store`. No scripts (JSON-LD data only),
+  no external requests, no prospect images, no web fonts.
+- Previews require an operator session in the owning workspace (V1); the proxy's operator CSP is not
+  applied to them so their stricter policy stands alone.
+- The compare view frames previews with `sandbox` without `allow-scripts` or `allow-same-origin`.
+- Model-written copy is checked for unsupported claims and verbatim copying before it is stored.
+
 ## Later phases
 
-- Previews: separate origin, strict CSP with no scripts, sandboxed iframes, hashed share tokens.
+- Prospect-facing previews: separate origin, hashed share tokens with expiry/revocation and view logs.

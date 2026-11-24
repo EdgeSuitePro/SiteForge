@@ -1,3 +1,6 @@
+import type { CatalogFact } from '../concepts/catalog';
+import { draftConcept } from '../concepts/draft';
+import { BRIEF_TAG, CONCEPT_PROMPT_ID, type ConceptBrief } from './prompts/concept';
 import { FACT_EXTRACT_PROMPT_ID } from './prompts/fact-extract';
 import { RUBRIC, SEMANTIC_PROMPT_ID, type SemanticAuditOutput } from './prompts/semantic-audit';
 import { UNTRUSTED_TAG, type PackedPage } from './untrusted';
@@ -59,6 +62,15 @@ function mockSemantic(pages: PackedPage[]): SemanticAuditOutput {
   return { answers, opportunities: [], instructionsFoundInContent: injected };
 }
 
+/** Concepts: the deterministic, fact-only draft (no creative copy without a model). */
+function mockConcept(user: string) {
+  const brief = JSON.parse(user.slice(user.indexOf(`<${BRIEF_TAG}>`) + BRIEF_TAG.length + 2, user.indexOf(`</${BRIEF_TAG}>`))) as ConceptBrief;
+  const start = user.indexOf(`<${UNTRUSTED_TAG}>`) + UNTRUSTED_TAG.length + 2;
+  const { facts } = JSON.parse(user.slice(start, user.lastIndexOf(`</${UNTRUSTED_TAG}>`))) as { facts: Omit<CatalogFact, 'factId' | 'snippets' | 'sourceUrl'>[] };
+  const catalog = { facts: facts.map((fact) => ({ ...fact, factId: fact.ref, snippets: [], sourceUrl: null, verified: false })) };
+  return draftConcept(brief.strategy, catalog, brief.auditFocus);
+}
+
 export class MockProvider implements AiProvider {
   readonly name = 'mock' as const;
 
@@ -67,6 +79,7 @@ export class MockProvider implements AiProvider {
     let output: unknown;
     if (request.promptId === SEMANTIC_PROMPT_ID) output = mockSemantic(pages);
     else if (request.promptId === FACT_EXTRACT_PROMPT_ID) output = { facts: [] };
+    else if (request.promptId === CONCEPT_PROMPT_ID) output = mockConcept(request.user);
     else throw new Error(`Mock provider has no behaviour for ${request.promptId}`);
     return {
       data: request.schema.parse(output),

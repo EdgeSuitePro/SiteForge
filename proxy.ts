@@ -64,6 +64,9 @@ export function proxy(request: NextRequest) {
     }
   }
 
+  // Concept previews carry their own script-free CSP (style hash, frame-ancestors 'self').
+  if (pathname.startsWith('/preview/')) return NextResponse.next();
+
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const csp = contentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', isDeployed);
   const requestHeaders = new Headers(request.headers);

@@ -12,6 +12,7 @@ import { AUDIT_JOB, failAudit, runAuditJob } from '../audit/audit';
 import { getAiProvider } from '../ai/provider';
 import { isRetryableAiError } from '../ai/run';
 import { AI_EXTRACT_JOB, failAiExtraction, failSemanticReview, runAiExtraction, runSemanticReview, SEMANTIC_AUDIT_JOB } from '../ai/stages';
+import { CONCEPT_JOB, failConcept, runConceptJob } from '../concepts/generate';
 import { EXTRACT_JOB, failExtraction, queueAuditForExtraction, queueExtraction, runExtraction } from '../facts/extraction';
 import type { Database } from '../db/client';
 import { crawlRuns, prospects } from '../db/schema';
@@ -137,12 +138,27 @@ const semanticHandler: JobHandler = async (job, { db, ai }) => {
   return { status: 'done' };
 };
 
+const conceptPayload = z.object({ conceptId: z.uuid() });
+
+const conceptHandler: JobHandler = async (job, { db, ai }) => {
+  const { conceptId } = conceptPayload.parse(job.payload);
+  const retryable = (error: unknown) => isRetryableAiError(error) && job.attempts < job.maxAttempts;
+  try {
+    await runConceptJob(db, ai, conceptId, { retryable });
+  } catch (error) {
+    if (retryable(error)) throw error;
+    await failConcept(db, conceptId, error);
+  }
+  return { status: 'done' };
+};
+
 export const jobHandlers: Record<string, JobHandler> = {
   [CRAWL_JOB]: crawlHandler,
   [EXTRACT_JOB]: extractHandler,
   [AI_EXTRACT_JOB]: aiExtractHandler,
   [AUDIT_JOB]: auditHandler,
   [SEMANTIC_AUDIT_JOB]: semanticHandler,
+  [CONCEPT_JOB]: conceptHandler,
 };
 
 export const defaultJobContextFactory = (db: Database, budgetMs: number): JobContext => ({

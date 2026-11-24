@@ -32,8 +32,12 @@ import {
 
 import type { CategoryScore, Category, Outcome, Severity } from '../../core/audit/types';
 import type { BrandProfile } from '../../core/brand/brand';
+import type { FactCatalog } from '../../core/concepts/catalog';
+import type { ClaimReport } from '../../core/concepts/claims';
+import type { ConceptContent, StrategyId } from '../../core/concepts/schema';
 import type { CrawlLimits } from '../../core/crawl/limits';
 import type { PageDocument } from '../../core/extract/document';
+import type { DesignTokens } from '../../core/render/tokens';
 import type { Confidence, Evidence, FactMethod, FactType } from '../../core/facts/types';
 
 export const siteforge = pgSchema('siteforge');
@@ -623,6 +627,68 @@ export const modelRuns = siteforge
     (table) => [
       index('model_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
       check('model_runs_status_check', sql`${table.status} in ('succeeded', 'failed', 'refused', 'invalid_output', 'skipped_budget')`),
+    ],
+  )
+  .enableRLS();
+
+// ---------------------------------------------------------------------------------------------
+// Concepts (Phase 5): one row per strategy per generation. A concept stores DATA (the checked
+// concept document, a frozen fact catalog and design tokens), never HTML: rendering is
+// deterministic, so the stored inputs + renderer version reproduce exactly what was shown.
+// ---------------------------------------------------------------------------------------------
+
+export const CONCEPT_STATUSES = ['queued', 'running', 'completed', 'failed'] as const;
+export type ConceptStatus = (typeof CONCEPT_STATUSES)[number];
+
+export const concepts = siteforge
+  .table(
+    'concepts',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id')
+        .notNull()
+        .references(() => prospects.id, { onDelete: 'cascade' }),
+      auditRunId: uuid('audit_run_id')
+        .notNull()
+        .references(() => auditRuns.id, { onDelete: 'cascade' }),
+      extractionRunId: uuid('extraction_run_id')
+        .notNull()
+        .references(() => extractionRuns.id, { onDelete: 'cascade' }),
+      /** Increments each time the operator generates a new set of concepts. */
+      generation: integer('generation').notNull(),
+      strategy: text('strategy').$type<StrategyId>().notNull(),
+      status: text('status').$type<ConceptStatus>().notNull().default('queued'),
+      /** Checked concept document (placeholders already applied). */
+      content: jsonb('content').$type<ConceptContent>(),
+      /** What the model (or mock) returned, before the claim check — kept for review. */
+      rawContent: jsonb('raw_content').$type<unknown>(),
+      claimReport: jsonb('claim_report').$type<ClaimReport>(),
+      /** Frozen snapshot of the facts the concept was allowed to use. */
+      factCatalog: jsonb('fact_catalog').$type<FactCatalog>(),
+      designTokens: jsonb('design_tokens').$type<DesignTokens>(),
+      schemaVersion: text('schema_version').notNull(),
+      rendererVersion: text('renderer_version').notNull(),
+      claimCheckVersion: text('claim_check_version').notNull(),
+      promptVersion: text('prompt_version').notNull(),
+      provider: text('provider'),
+      modelRunId: uuid('model_run_id'),
+      /** SHA-256 of the rendered HTML (operator mode), for provenance. */
+      renderHash: text('render_hash'),
+      error: text('error'),
+      requestedBy: uuid('requested_by'),
+      startedAt: timestamp('started_at', { withTimezone: true }),
+      finishedAt: timestamp('finished_at', { withTimezone: true }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      uniqueIndex('concepts_prospect_generation_strategy_idx').on(table.prospectId, table.generation, table.strategy),
+      index('concepts_prospect_created_idx').on(table.prospectId, table.createdAt),
+      check('concepts_status_check', sql`${table.status} in ('queued', 'running', 'completed', 'failed')`),
+      check('concepts_strategy_check', sql`${table.strategy} in ('local_growth', 'craftsman', 'fastest_path')`),
     ],
   )
   .enableRLS();

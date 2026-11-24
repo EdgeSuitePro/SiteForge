@@ -4,17 +4,19 @@ import { notFound } from 'next/navigation';
 import { requireOperator } from '@/server/auth/operator';
 import { getLatestCrawlProgress, getProspect, ServiceError } from '@/server/crawl/service';
 import { getAudit } from '@/server/audit/service';
+import { getConcepts } from '@/server/concepts/service';
 import { getDb } from '@/server/db/client';
 import { getBusinessProfile } from '@/server/facts/service';
 import { isUuid } from '@/server/http';
 import { AuditPanel } from '@/ui/audit-panel';
 import { AutoRefresh } from '@/ui/auto-refresh';
 import { BusinessProfilePanel } from '@/ui/business-profile';
+import { ConceptsPanel } from '@/ui/concepts-panel';
 import { CrawlProgressPanel } from '@/ui/crawl-progress';
 import { PROSPECT_STATUS_LABEL } from '@/ui/labels';
 import { StatusPill, prospectTone } from '@/ui/status-pill';
 
-import { analyzeAction, cancelAction, reAuditAction, reExtractAction, reviewFactAction } from '../actions';
+import { analyzeAction, cancelAction, generateConceptsAction, reAuditAction, reExtractAction, reviewFactAction } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 const TABS = [
   { key: 'audit', label: 'Audit' },
+  { key: 'concepts', label: 'Concepts' },
   { key: 'profile', label: 'Business profile' },
   { key: 'crawl', label: 'Crawl' },
 ] as const;
@@ -51,10 +54,11 @@ export default async function ProspectPage({
     if (error instanceof ServiceError && error.status === 404) notFound();
     throw error;
   }
-  const [progress, profile, audit] = await Promise.all([
+  const [progress, profile, audit, conceptsView] = await Promise.all([
     getLatestCrawlProgress(db, operator.workspaceId, id),
     getBusinessProfile(db, operator.workspaceId, id),
     getAudit(db, operator.workspaceId, id),
+    getConcepts(db, operator.workspaceId, id),
   ]);
 
   const hasAudit = audit?.run.status === 'completed';
@@ -63,10 +67,11 @@ export default async function ProspectPage({
   const crawlActive = progress?.run.status === 'queued' || progress?.run.status === 'running';
   const extractionActive = Boolean(profile?.pending) || profile?.run.status === 'queued' || profile?.run.status === 'running';
   const auditActive = Boolean(audit?.pending) || Boolean(audit?.ai.reviewPending);
+  const conceptsActive = Boolean(conceptsView?.pending);
 
   return (
     <main>
-      <AutoRefresh active={crawlActive || extractionActive || auditActive} />
+      <AutoRefresh active={crawlActive || extractionActive || auditActive || conceptsActive} />
       <Link href="/prospects" className="text-sm text-ink-soft hover:text-ink">
         ← Prospects
       </Link>
@@ -102,7 +107,9 @@ export default async function ProspectPage({
       </nav>
 
       <div className="mt-6">
-        {tab === 'audit' ? (
+        {tab === 'concepts' ? (
+          <ConceptsPanel view={conceptsView ? serialize(conceptsView) : null} prospectId={prospect.id} generate={generateConceptsAction.bind(null, prospect.id)} />
+        ) : tab === 'audit' ? (
           <AuditPanel view={audit} analyzing={crawlActive || extractionActive} reAudit={reAuditAction.bind(null, prospect.id)} />
         ) : tab === 'profile' ? (
           <BusinessProfilePanel

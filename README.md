@@ -24,7 +24,8 @@ modifies the prospect's existing website.
 | 2 | Business facts with evidence, brand extraction, operator review | ✅ |
 | 3 | Deterministic audit + ESP Website Opportunity Score | ✅ |
 | 4 | AI-assisted fact extraction + semantic audit (cited, capped, budgeted; mock without a key) | ✅ |
-| 5–6 | Concepts + previews, acceptance | planned |
+| 5 | Three strategy concepts, unsupported-claim checker, deterministic renderers, private previews, compare + presentation | ✅ |
+| 6 | Acceptance against real sites | planned |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

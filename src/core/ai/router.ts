@@ -30,6 +30,12 @@ export const AI_TASKS = {
     maxTokens: 16_000,
     description: 'Answer the semantic audit rubric (clarity, trust, customer focus…) with quoted evidence.',
   },
+  'concepts.generate': {
+    tier: 'strong',
+    effort: 'medium',
+    maxTokens: 12_000,
+    description: 'Write one strategy concept (copy + fact references) as a concept document; rendered deterministically.',
+  },
 } as const satisfies Record<string, TaskConfig>;
 
 export type AiTaskId = keyof typeof AI_TASKS;
