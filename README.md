@@ -23,7 +23,8 @@ modifies the prospect's existing website.
 | 1 | Hardened crawler, background jobs, prospects + crawl progress UI | ✅ |
 | 2 | Business facts with evidence, brand extraction, operator review | ✅ |
 | 3 | Deterministic audit + ESP Website Opportunity Score | ✅ |
-| 4–6 | AI analysis, concepts + previews, acceptance | planned |
+| 4 | AI-assisted fact extraction + semantic audit (cited, capped, budgeted; mock without a key) | ✅ |
+| 5–6 | Concepts + previews, acceptance | planned |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

@@ -129,6 +129,16 @@ export async function runAuditJob(db: Database, auditRunId: string): Promise<voi
     await tx.update(prospects).set({ status: 'analyzed' }).where(eq(prospects.id, run.prospectId));
   });
 
+  // Next pipeline stage: the AI-assisted semantic review (strong tier) adds capped findings.
+  await enqueueJob(db, {
+    kind: 'semantic_audit',
+    payload: { auditRunId: run.id },
+    workspaceId: run.workspaceId,
+    dedupeKey: `semantic_audit:${run.id}`,
+    priority: 3,
+    maxAttempts: 3,
+  });
+
   await recordActivity(db, {
     workspaceId: run.workspaceId,
     prospectId: run.prospectId,

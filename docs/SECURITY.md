@@ -42,8 +42,21 @@
   constant-time bearer-secret checks.
 - No outbound proxy support by design: a proxy would resolve DNS itself and bypass connect-time validation.
 
+## Phase 4 (AI) — implemented
+
+- Crawled text reaches the model only inside an `<untrusted_website_content>` JSON envelope; the
+  delimiter is neutralised inside the data and invisible/control characters are stripped. The system
+  prompt states that the content is data and that instructions in it must be ignored and reported.
+- The model is given **no tools** and must answer in a fixed JSON schema, re-validated server-side.
+- Nothing the model says is trusted on its own: quotes are verified verbatim against stored page text,
+  prices must appear in their quote, owner names must appear in theirs, uncited positive answers are
+  discarded, and opportunities need a verified quote and stay "requires owner confirmation".
+- If the model reports instructions in the content, the audit shows a notice; the content is never acted on.
+- API keys come only from the environment (never committed); `SITEFORGE_AI_PROVIDER=anthropic` without a
+  key fails at startup. Logs never include prompts or page content.
+- Cost control: per-prospect rolling-24h budget (`SITEFORGE_AI_BUDGET_USD`), capped input size, and
+  every call recorded in `model_runs`.
+
 ## Later phases
 
-- AI: crawl content isolated in a delimited untrusted-data block; no tools; schema-constrained output;
-  citations verified against stored page text.
 - Previews: separate origin, strict CSP with no scripts, sandboxed iframes, hashed share tokens.

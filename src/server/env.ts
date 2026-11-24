@@ -51,6 +51,13 @@ const rawSchema = z.object({
   PORT: optionalString,
 
   ANTHROPIC_API_KEY: optionalString,
+  /** auto = Anthropic when ANTHROPIC_API_KEY is set, otherwise the mock provider. */
+  SITEFORGE_AI_PROVIDER: z.enum(['auto', 'anthropic', 'mock']).default('auto'),
+  SITEFORGE_MODEL_FAST: optionalString,
+  SITEFORGE_MODEL_STRONG: optionalString,
+  SITEFORGE_MODEL_PREMIUM: optionalString,
+  /** Maximum estimated AI spend per prospect per rolling 24 hours, USD. */
+  SITEFORGE_AI_BUDGET_USD: z.coerce.number().min(0).max(100).default(2),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
@@ -72,6 +79,11 @@ export interface ServerEnv {
   vercelBypassSecret: string | undefined;
   cronSecret: string | undefined;
   anthropicApiKey: string | undefined;
+  ai: {
+    provider: 'anthropic' | 'mock';
+    models: { fast?: string; strong?: string; premium?: string };
+    budgetUsdPerProspect: number;
+  };
   logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
 
@@ -146,6 +158,12 @@ export function parseServerEnv(source: Record<string, string | undefined>): Serv
     throw new EnvError('JOB_SECRET and CRON_SECRET are required on Vercel deployments.');
   }
 
+  if (raw.SITEFORGE_AI_PROVIDER === 'anthropic' && !raw.ANTHROPIC_API_KEY) {
+    throw new EnvError('SITEFORGE_AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.');
+  }
+  const aiProvider =
+    raw.SITEFORGE_AI_PROVIDER === 'mock' ? 'mock' : raw.SITEFORGE_AI_PROVIDER === 'anthropic' || raw.ANTHROPIC_API_KEY ? 'anthropic' : 'mock';
+
   const appBaseUrl = (
     raw.APP_BASE_URL ?? (raw.VERCEL_URL ? `https://${raw.VERCEL_URL}` : `http://localhost:${raw.PORT ?? '3000'}`)
   ).replace(/\/$/, '');
@@ -162,6 +180,11 @@ export function parseServerEnv(source: Record<string, string | undefined>): Serv
     vercelBypassSecret: raw.VERCEL_AUTOMATION_BYPASS_SECRET,
     cronSecret: raw.CRON_SECRET,
     anthropicApiKey: raw.ANTHROPIC_API_KEY,
+    ai: {
+      provider: aiProvider,
+      models: { fast: raw.SITEFORGE_MODEL_FAST, strong: raw.SITEFORGE_MODEL_STRONG, premium: raw.SITEFORGE_MODEL_PREMIUM },
+      budgetUsdPerProspect: raw.SITEFORGE_AI_BUDGET_USD,
+    },
     logLevel: raw.LOG_LEVEL,
   };
 }

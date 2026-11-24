@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { MockProvider } from '@/core/ai/mock';
 import { createSafeFetcher } from '@/core/crawl/fetcher';
 import { getAudit, startReAudit } from '@/server/audit/service';
 import { startCrawl } from '@/server/crawl/service';
@@ -22,6 +23,7 @@ const context = (db: DatabaseHandle['db'], budgetMs: number): JobContext => ({
   db,
   budgetMs,
   createFetcher: () => createSafeFetcher(testFetchPolicy),
+  ai: new MockProvider(),
   clock: { now: () => Date.now() + virtual, sleep: async (ms) => void (virtual += ms) },
 });
 

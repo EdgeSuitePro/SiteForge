@@ -27,6 +27,18 @@ customers. **It is not an industry-standard SEO score**, and the UI says so.
   Conversion 20, Customer experience 15, Local relevance 15. Revenue opportunities: 0 (unscored).
 - Findings are ordered by severity × points lost.
 
+## AI-assisted questions (Phase 4)
+
+A fixed rubric (`semantic-audit@1`, 13 questions) covers judgement calls the automated checks cannot
+make (is the purpose obvious, is the copy customer-focused, is the process understandable…).
+
+- The model rates each question yes / partly / no / cannot assess and must quote the site. Code turns
+  ratings into points (yes = full, partly = half, no = 0); cannot assess is excluded.
+- A yes/partly answer with no verified quote becomes *unknown* (excluded), so invented praise cannot raise a score.
+- Within each category, AI questions are scaled so they make up **at most 40%** of points possible.
+- Mock-provider answers are shown separately and score 0 points.
+- The audit stores the rubric version and the model run; changing a question or its weight bumps the version.
+
 ## Changing rules
 
 Any change to a rule, weight or threshold bumps `RULESET_VERSION`. Audits store the version that

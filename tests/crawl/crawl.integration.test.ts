@@ -3,6 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { MockProvider } from '@/core/ai/mock';
 import { createSafeFetcher } from '@/core/crawl/fetcher';
 import { cancelCrawl, createProspect, getLatestCrawlProgress, startCrawl } from '@/server/crawl/service';
 import type { DatabaseHandle } from '@/server/db/client';
@@ -31,6 +32,7 @@ const testContext = (db: DatabaseHandle['db'], budgetMs: number): JobContext => 
   db,
   budgetMs,
   createFetcher: () => createSafeFetcher(testFetchPolicy),
+  ai: new MockProvider(),
   clock,
 });
 

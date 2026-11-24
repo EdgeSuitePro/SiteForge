@@ -23,6 +23,7 @@
     "db:seed-demo": "tsx --conditions=react-server scripts/dev-seed-demo.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
     "@electric-sql/pglite": "0.5.8",
     "cheerio": "1.2.0",
     "domhandler": "5.0.3",

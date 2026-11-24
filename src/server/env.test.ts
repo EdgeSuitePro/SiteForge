@@ -49,6 +49,14 @@ describe('parseServerEnv', () => {
     ).toThrow(/SESSION_SECRET/);
   });
 
+  it('uses the mock AI provider without a key and Anthropic with one', () => {
+    expect(parseServerEnv({}).ai.provider).toBe('mock');
+    expect(parseServerEnv({ ANTHROPIC_API_KEY: 'sk-test' }).ai.provider).toBe('anthropic');
+    expect(parseServerEnv({ ANTHROPIC_API_KEY: 'sk-test', SITEFORGE_AI_PROVIDER: 'mock' }).ai.provider).toBe('mock');
+    expect(() => parseServerEnv({ SITEFORGE_AI_PROVIDER: 'anthropic' })).toThrow(/requires ANTHROPIC_API_KEY/);
+    expect(parseServerEnv({ SITEFORGE_MODEL_STRONG: 'claude-opus-5-5' }).ai.models.strong).toBe('claude-opus-5-5');
+  });
+
   it('rejects a short session secret', () => {
     expect(() => parseServerEnv({ SESSION_SECRET: 'short' })).toThrow(/32 characters/);
   });

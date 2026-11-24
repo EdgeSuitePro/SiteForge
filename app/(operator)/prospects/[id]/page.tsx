@@ -62,7 +62,7 @@ export default async function ProspectPage({
   const tab = TABS.some((entry) => entry.key === requestedTab) ? requestedTab : hasAudit ? 'audit' : hasProfile ? 'profile' : 'crawl';
   const crawlActive = progress?.run.status === 'queued' || progress?.run.status === 'running';
   const extractionActive = Boolean(profile?.pending) || profile?.run.status === 'queued' || profile?.run.status === 'running';
-  const auditActive = Boolean(audit?.pending);
+  const auditActive = Boolean(audit?.pending) || Boolean(audit?.ai.reviewPending);
 
   return (
     <main>

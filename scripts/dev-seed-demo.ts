@@ -10,6 +10,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 
+import { MockProvider } from '../src/core/ai/mock';
 import { createSafeFetcher } from '../src/core/crawl/fetcher';
 import { devUserIdForEmail } from '../src/server/auth/dev-identity';
 import { openDatabase } from '../src/server/db/client';
@@ -59,6 +60,7 @@ async function main() {
           db: database,
           budgetMs,
           createFetcher: () => createSafeFetcher(testFetchPolicy),
+          ai: new MockProvider(),
           clock: { now: () => Date.now() + virtual, sleep: async (ms) => void (virtual += ms) },
         }),
       });

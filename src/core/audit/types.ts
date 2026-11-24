@@ -65,7 +65,7 @@ export interface RuleDefinition {
 export interface Finding {
   ruleId: string;
   category: Category;
-  source: 'deterministic';
+  source: 'deterministic' | 'semantic';
   outcome: Outcome;
   severity: Severity;
   title: string;

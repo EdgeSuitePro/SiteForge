@@ -355,6 +355,10 @@ export const jobs = siteforge
 // Business facts (Phase 2)
 // ---------------------------------------------------------------------------------------------
 
+/** pending → completed | failed | skipped (budget / not applicable) | mock (no AI provider configured). */
+export const AI_STAGE_STATUSES = ['pending', 'completed', 'failed', 'skipped', 'mock'] as const;
+export type AiStageStatus = (typeof AI_STAGE_STATUSES)[number];
+
 export const EXTRACTION_STATUSES = ['queued', 'running', 'completed', 'failed'] as const;
 export type ExtractionStatus = (typeof EXTRACTION_STATUSES)[number];
 
@@ -388,6 +392,11 @@ export const extractionRuns = siteforge
       brand: jsonb('brand').$type<BrandProfile>(),
       stats: jsonb('stats').$type<ExtractionStats>(),
       error: text('error'),
+      /** AI-assisted extraction stage (fast tier). */
+      aiStatus: text('ai_status').$type<AiStageStatus>().notNull().default('pending'),
+      aiError: text('ai_error'),
+      aiModelRunId: uuid('ai_model_run_id'),
+      aiStats: jsonb('ai_stats').$type<{ added: number; rejected: number; duplicates: number }>(),
       requestedBy: uuid('requested_by'),
       startedAt: timestamp('started_at', { withTimezone: true }),
       finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -397,6 +406,7 @@ export const extractionRuns = siteforge
     (table) => [
       index('extraction_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
       check('extraction_runs_status_check', sql`${table.status} in ('queued', 'running', 'completed', 'failed')`),
+      check('extraction_runs_ai_status_check', sql`${table.aiStatus} in ('pending', 'completed', 'failed', 'skipped', 'mock')`),
     ],
   )
   .enableRLS();
@@ -459,6 +469,8 @@ export const businessFacts = siteforge
       reviewedBy: uuid('reviewed_by'),
       reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
       reviewNote: text('review_note'),
+      /** Set for AI-extracted facts: the model call that produced them. */
+      modelRunId: uuid('model_run_id'),
       createdAt: createdAt(),
     },
     (table) => [
@@ -504,6 +516,12 @@ export const auditRuns = siteforge
       /** Latest fact review time included in this audit (to detect later operator changes). */
       factsReviewedThrough: timestamp('facts_reviewed_through', { withTimezone: true }),
       error: text('error'),
+      /** AI-assisted semantic review stage (strong tier). */
+      semanticStatus: text('semantic_status').$type<AiStageStatus>().notNull().default('pending'),
+      semanticError: text('semantic_error'),
+      semanticModelRunId: uuid('semantic_model_run_id'),
+      semanticPromptVersion: text('semantic_prompt_version'),
+      semanticNotes: jsonb('semantic_notes').$type<{ citationsRejected: number; instructionsFoundInContent: boolean; provider: string; model: string }>(),
       requestedBy: uuid('requested_by'),
       startedAt: timestamp('started_at', { withTimezone: true }),
       finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -514,6 +532,7 @@ export const auditRuns = siteforge
       index('audit_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
       check('audit_runs_status_check', sql`${table.status} in ('queued', 'running', 'completed', 'failed')`),
       check('audit_runs_score_check', sql`${table.overallScore} is null or (${table.overallScore} between 0 and 100)`),
+      check('audit_runs_semantic_status_check', sql`${table.semanticStatus} in ('pending', 'completed', 'failed', 'skipped', 'mock')`),
     ],
   )
   .enableRLS();
@@ -548,6 +567,7 @@ export const auditFindings = siteforge
       pointsAwarded: real('points_awarded').notNull(),
       priority: real('priority').notNull(),
       sortOrder: integer('sort_order').notNull(),
+      modelRunId: uuid('model_run_id'),
       createdAt: createdAt(),
     },
     (table) => [
@@ -556,6 +576,53 @@ export const auditFindings = siteforge
       check('audit_findings_outcome_check', sql`${table.outcome} in ('pass', 'partial', 'fail', 'not_applicable', 'unknown')`),
       check('audit_findings_severity_check', sql`${table.severity} in ('high', 'medium', 'low')`),
       check('audit_findings_source_check', sql`${table.source} in ('deterministic', 'semantic')`),
+    ],
+  )
+  .enableRLS();
+
+// ---------------------------------------------------------------------------------------------
+// AI model calls (Phase 4): provenance, tokens and estimated cost for every call.
+// ---------------------------------------------------------------------------------------------
+
+export const MODEL_RUN_STATUSES = ['succeeded', 'failed', 'refused', 'invalid_output', 'skipped_budget'] as const;
+export type ModelRunStatus = (typeof MODEL_RUN_STATUSES)[number];
+
+export const modelRuns = siteforge
+  .table(
+    'model_runs',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      workspaceId: uuid('workspace_id')
+        .notNull()
+        .references(() => workspaces.id, { onDelete: 'cascade' }),
+      prospectId: uuid('prospect_id').references(() => prospects.id, { onDelete: 'cascade' }),
+      task: text('task').notNull(),
+      provider: text('provider').notNull(),
+      tier: text('tier').notNull(),
+      modelRequested: text('model_requested').notNull(),
+      modelServed: text('model_served'),
+      promptId: text('prompt_id').notNull(),
+      promptVersion: text('prompt_version').notNull(),
+      effort: text('effort').notNull(),
+      /** SHA-256 of system + user input, to spot identical repeated calls. */
+      inputHash: text('input_hash').notNull(),
+      status: text('status').$type<ModelRunStatus>().notNull(),
+      stopReason: text('stop_reason'),
+      inputTokens: integer('input_tokens').notNull().default(0),
+      outputTokens: integer('output_tokens').notNull().default(0),
+      cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+      cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
+      /** Estimate from the versioned price table (pricesVersion), not an invoice. */
+      costUsd: real('cost_usd'),
+      pricesVersion: text('prices_version').notNull(),
+      latencyMs: integer('latency_ms'),
+      error: text('error'),
+      related: jsonb('related').$type<Record<string, string>>().notNull().default({}),
+      createdAt: createdAt(),
+    },
+    (table) => [
+      index('model_runs_prospect_created_idx').on(table.prospectId, table.createdAt),
+      check('model_runs_status_check', sql`${table.status} in ('succeeded', 'failed', 'refused', 'invalid_output', 'skipped_budget')`),
     ],
   )
   .enableRLS();

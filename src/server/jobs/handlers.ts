@@ -4,11 +4,15 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { runCrawlTick } from '../../core/crawl/engine';
+import type { AiProvider } from '../../core/ai/types';
 import { createSafeFetcher, type SafeFetcher } from '../../core/crawl/fetcher';
 import { recordActivity } from '../activity';
 import { createCrawlStore } from '../crawl/store';
 import { AUDIT_JOB, failAudit, runAuditJob } from '../audit/audit';
-import { EXTRACT_JOB, failExtraction, queueExtraction, runExtraction } from '../facts/extraction';
+import { getAiProvider } from '../ai/provider';
+import { isRetryableAiError } from '../ai/run';
+import { AI_EXTRACT_JOB, failAiExtraction, failSemanticReview, runAiExtraction, runSemanticReview, SEMANTIC_AUDIT_JOB } from '../ai/stages';
+import { EXTRACT_JOB, failExtraction, queueAuditForExtraction, queueExtraction, runExtraction } from '../facts/extraction';
 import type { Database } from '../db/client';
 import { crawlRuns, prospects } from '../db/schema';
 import { log } from '../log';
@@ -21,6 +25,8 @@ export interface JobContext {
   /** Milliseconds this execution may use. */
   budgetMs: number;
   createFetcher: () => SafeFetcher;
+  /** AI provider (Anthropic or mock). Injectable for tests. */
+  ai: AiProvider;
   /** Injectable clock (tests use a virtual clock so politeness delays don't slow them down). */
   clock?: { now: () => number; sleep: (ms: number) => Promise<void> };
 }
@@ -106,14 +112,42 @@ const auditHandler: JobHandler = async (job, { db }) => {
   }
 };
 
+const aiExtractHandler: JobHandler = async (job, { db, ai }) => {
+  const { extractionRunId } = extractPayload.parse(job.payload);
+  try {
+    await runAiExtraction(db, ai, extractionRunId);
+  } catch (error) {
+    // Retry transient provider problems; otherwise record the failure and carry on without AI facts.
+    if (isRetryableAiError(error) && job.attempts < job.maxAttempts) throw error;
+    await failAiExtraction(db, extractionRunId, error);
+  }
+  await queueAuditForExtraction(db, extractionRunId);
+  return { status: 'done' };
+};
+
+const semanticHandler: JobHandler = async (job, { db, ai }) => {
+  const { auditRunId } = auditPayload.parse(job.payload);
+  try {
+    await runSemanticReview(db, ai, auditRunId);
+  } catch (error) {
+    // The deterministic audit already stands on its own; record why the AI review is missing.
+    if (isRetryableAiError(error) && job.attempts < job.maxAttempts) throw error;
+    await failSemanticReview(db, auditRunId, error);
+  }
+  return { status: 'done' };
+};
+
 export const jobHandlers: Record<string, JobHandler> = {
   [CRAWL_JOB]: crawlHandler,
   [EXTRACT_JOB]: extractHandler,
+  [AI_EXTRACT_JOB]: aiExtractHandler,
   [AUDIT_JOB]: auditHandler,
+  [SEMANTIC_AUDIT_JOB]: semanticHandler,
 };
 
 export const defaultJobContextFactory = (db: Database, budgetMs: number): JobContext => ({
   db,
   budgetMs,
   createFetcher: () => createSafeFetcher(),
+  ai: getAiProvider(),
 });

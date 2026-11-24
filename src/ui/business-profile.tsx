@@ -18,7 +18,7 @@ const METHOD_LABEL: Record<string, string> = {
   structured_data: 'structured data',
   markup: 'page markup',
   text_pattern: 'page text',
-  ai_extracted: 'AI-assisted',
+  ai_extracted: 'AI-assisted reading (quote verified)',
   operator: 'operator',
 };
 

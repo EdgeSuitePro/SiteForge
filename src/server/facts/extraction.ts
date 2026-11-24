@@ -24,7 +24,6 @@ import {
 } from '../db/schema';
 import { enqueueJob } from '../jobs/queue';
 import { log } from '../log';
-import { queueAudit } from '../audit/audit';
 
 export const EXTRACT_JOB = 'extract';
 
@@ -157,13 +156,15 @@ export async function runExtraction(db: Database, extractionRunId: string, creat
       .where(eq(extractionRuns.id, run.id));
   });
 
-  // Next pipeline stage: the deterministic audit marks the prospect analyzed when it finishes.
-  await queueAudit(db, {
+  // Next pipeline stage: AI-assisted extraction (fast tier). It always hands on to the audit,
+  // whether it succeeds, fails or is skipped.
+  await enqueueJob(db, {
+    kind: 'ai_extract',
+    payload: { extractionRunId: run.id },
     workspaceId: run.workspaceId,
-    prospectId: run.prospectId,
-    extractionRunId: run.id,
-    crawlRunId: run.crawlRunId,
-    requestedBy: run.requestedBy,
+    dedupeKey: `ai_extract:${run.id}`,
+    priority: 5,
+    maxAttempts: 3,
   });
 
   await recordActivity(db, {
@@ -193,4 +194,18 @@ export async function latestExtractableCrawl(db: Database, prospectId: string) {
     .orderBy(desc(crawlRuns.createdAt))
     .limit(1);
   return crawl ?? null;
+}
+
+/** Hand an extraction on to the deterministic audit (after the AI stage, whatever its outcome). */
+export async function queueAuditForExtraction(db: Database, extractionRunId: string): Promise<void> {
+  const [run] = await db.select().from(extractionRuns).where(eq(extractionRuns.id, extractionRunId));
+  if (!run) return;
+  const { queueAudit } = await import('../audit/audit');
+  await queueAudit(db, {
+    workspaceId: run.workspaceId,
+    prospectId: run.prospectId,
+    extractionRunId: run.id,
+    crawlRunId: run.crawlRunId,
+    requestedBy: run.requestedBy,
+  });
 }

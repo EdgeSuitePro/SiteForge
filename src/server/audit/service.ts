@@ -1,14 +1,16 @@
 import 'server-only';
 
-import { and, desc, eq, gt, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sum } from 'drizzle-orm';
 
 import { describeRules } from '../../core/audit/ruleset';
 import { CATEGORY_INFO, SCORE_NAME } from '../../core/audit/types';
 import type { Operator } from '../auth/operator';
 import { ServiceError, getProspect } from '../crawl/service';
 import type { Database } from '../db/client';
-import { auditFindings, auditRuns, businessFacts, extractionRuns, prospects } from '../db/schema';
+import { auditFindings, auditRuns, businessFacts, extractionRuns, modelRuns, prospects } from '../db/schema';
 import { hasActiveAudit, latestCompletedExtraction, queueAudit } from './audit';
+
+const REVIEW_PENDING_WINDOW_MS = 15 * 60_000;
 
 export type AuditRunRecord = typeof auditRuns.$inferSelect;
 export type AuditFindingRecord = typeof auditFindings.$inferSelect;
@@ -22,6 +24,15 @@ export interface AuditView {
   /** True when facts were reviewed, or re-extracted, after this audit ran. */
   stale: boolean;
   pending: boolean;
+  /** Provenance of the AI-assisted review, when it ran. */
+  ai: {
+    /** True while the semantic review is still queued or running. */
+    reviewPending: boolean;
+    model: string | null;
+    provider: string | null;
+    /** Estimated AI spend for this prospect, all time (USD). */
+    totalCostUsd: number;
+  };
 }
 
 export async function getAudit(db: Database, workspaceId: string, prospectId: string): Promise<AuditView | null> {
@@ -52,7 +63,28 @@ export async function getAudit(db: Database, workspaceId: string, prospectId: st
     stale = Boolean(reviewedLater) || (latestExtraction !== null && latestExtraction.id !== completed.extractionRunId);
   }
 
-  return { scoreName: SCORE_NAME, run: shown, findings, categoryInfo: CATEGORY_INFO, rules: describeRules(), stale, pending };
+  const [semanticRun] = completed?.semanticModelRunId
+    ? await db.select({ model: modelRuns.modelServed, provider: modelRuns.provider }).from(modelRuns).where(eq(modelRuns.id, completed.semanticModelRunId))
+    : [];
+  const [spend] = await db.select({ total: sum(modelRuns.costUsd) }).from(modelRuns).where(eq(modelRuns.prospectId, prospectId));
+
+  return {
+    scoreName: SCORE_NAME,
+    run: shown,
+    findings,
+    categoryInfo: CATEGORY_INFO,
+    rules: describeRules(),
+    stale,
+    pending,
+    ai: {
+      // Bounded so a review whose job died never leaves the page refreshing forever.
+      reviewPending:
+        completed?.semanticStatus === 'pending' && Date.now() - new Date(completed.finishedAt ?? completed.createdAt).getTime() < REVIEW_PENDING_WINDOW_MS,
+      model: semanticRun?.model ?? null,
+      provider: semanticRun?.provider ?? null,
+      totalCostUsd: Number(spend?.total ?? 0),
+    },
+  };
 }
 
 /** Re-run the audit on the latest completed extraction, including current fact decisions. */

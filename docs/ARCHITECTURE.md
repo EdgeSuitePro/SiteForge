@@ -23,8 +23,9 @@ deployment with Chef KnifeWorks (the first ESP tenant), which serves only as ref
 Add prospect → Analyze
   → crawl (jobs: crawl_tick …)           Phase 1
   → extract facts (deterministic)        Phase 2
-  → deterministic audit + scoring        Phase 3
-  → AI extraction + semantic audit       Phase 4
+  → AI fact extraction (fast tier)       Phase 4   job: ai_extract
+  → deterministic audit + scoring        Phase 3   job: audit
+  → AI semantic review (strong tier)     Phase 4   job: semantic_audit (rescoring, capped)
   → concepts: strategy JSON → claim check → deterministic renderers → private previews   Phase 5
 ```
 
@@ -114,3 +115,25 @@ crawl completed ──► extract job ──► parse stored HTML (extract@1)
 - **Re-extraction** re-reads stored HTML without re-crawling (e.g. after an extractor version bump).
 - `page_extractions` stores each page's parsed structure (headings, meta, links, images, forms, JSON-LD,
   text blocks) as the input for Phase 3 audit rules.
+
+## AI analysis (Phase 4 — implemented)
+
+- **Provider abstraction** (`src/core/ai/types.ts`): `AiProvider.generateStructured()` with a Zod schema.
+  `AnthropicProvider` uses the official SDK (`beta.messages.parse` + `betaZodOutputFormat`, cached
+  system prompt, typed error mapping). `MockProvider` makes no calls and is labelled as mock everywhere.
+  The provider is chosen by `SITEFORGE_AI_PROVIDER` (auto → Anthropic only when a key is configured).
+- **Model router** (`src/core/ai/router.ts`): tasks map to tiers — fast `claude-haiku-5-5` (fact
+  extraction), strong `claude-sonnet-5-5` (semantic audit), premium `claude-opus-5-5` (reserved for
+  concepts). Each tier can be overridden by env. Strong/premium requests opt into server-side model
+  fallback.
+- **Pipeline**: `extract → ai_extract → audit → semantic_audit`. AI stages never block the pipeline:
+  on refusal, invalid output, budget exhaustion or provider outage they record `failed`/`skipped` and
+  the deterministic results stand. Transient errors are retried by the job queue.
+- **Grounding**: every AI fact or rubric answer must cite a quote that is found verbatim in the stored
+  page text (`src/core/ai/citations.ts`); unverified quotes are discarded and counted. Ratings are
+  turned into points in code, and semantic points are capped at 40% of each category
+  (`src/core/ai/semantic.ts`). AI facts carry method `ai_extracted` and never override
+  deterministic facts.
+- **Accounting**: every call (including failures and budget skips) is a `model_runs` row: task, tier,
+  requested/served model, prompt id@version, input hash, tokens, estimated cost (`prices@…`), latency.
+  A per-prospect rolling-24h budget is enforced before any non-mock call.

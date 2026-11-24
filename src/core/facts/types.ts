@@ -32,9 +32,9 @@ export type FactType = (typeof FACT_TYPES)[number];
  *  - structured_data: the site's own schema.org JSON-LD
  *  - markup: unambiguous HTML (tel:/mailto: links, <address>, forms, embedded widgets)
  *  - text_pattern: a deterministic pattern in visible text (weaker; always shown with its snippet)
- * AI-assisted extraction (Phase 4) will add `ai_extracted`; operator edits add `operator`.
+ *  - ai_extracted: found by a model AND backed by a quote verified verbatim against the page text
  */
-export type FactMethod = 'structured_data' | 'markup' | 'text_pattern';
+export type FactMethod = 'structured_data' | 'markup' | 'text_pattern' | 'ai_extracted';
 export type Confidence = 'high' | 'medium' | 'low';
 
 export interface Evidence {

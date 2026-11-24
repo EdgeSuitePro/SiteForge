@@ -100,7 +100,7 @@ const REGION_ROLES: Record<string, Region> = { banner: 'header', navigation: 'na
 const FOOTER_HINT = /(^|[\s_-])(site[-_]?)?footer($|[\s_-])|SITE_FOOTER/i;
 const HEADER_HINT = /(^|[\s_-])(site[-_]?)?header($|[\s_-])|SITE_HEADER|masthead/i;
 
-export const clean = (value: string | null | undefined): string => (value ?? '').replace(/[\s ​-‍﻿]+/g, ' ').trim();
+export const clean = (value: string | null | undefined): string => (value ?? '').replace(/[\s \u200b-\u200d\ufeff]+/g, ' ').trim();
 const cleanOrNull = (value: string | null | undefined): string | null => clean(value) || null;
 
 function isHidden(element: Element): boolean {

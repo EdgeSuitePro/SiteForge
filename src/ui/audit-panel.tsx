@@ -17,6 +17,8 @@ const pathOf = (url: string) => {
   }
 };
 
+const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
 const fmtPoints = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
 
 function Evidence({ finding }: { finding: AuditFindingRecord }) {
@@ -46,6 +48,14 @@ function FindingCard({ finding, categoryLabel }: { finding: AuditFindingRecord; 
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {!finding.requiresOwnerConfirmation && <StatusPill tone={severity.tone}>{severity.label}</StatusPill>}
         <span className="text-muted">{categoryLabel}</span>
+        {finding.source === 'semantic' && (
+          <span
+            className="rounded bg-violet-50 px-1.5 py-0.5 font-medium text-violet-800 ring-1 ring-violet-200"
+            title="Judged by the AI review against a fixed rubric. Its quotes were checked word-for-word against the site."
+          >
+            AI-assisted
+          </span>
+        )}
         {lost > 0 && <span className="ml-auto tabular-nums text-muted">−{fmtPoints(lost)} of {fmtPoints(finding.pointsPossible)} pts</span>}
       </div>
       <h4 className="mt-2 font-medium">{finding.title}</h4>
@@ -62,6 +72,54 @@ function FindingCard({ finding, categoryLabel }: { finding: AuditFindingRecord; 
       </dl>
       <Evidence finding={finding} />
     </li>
+  );
+}
+
+function AiReviewNotice({ view }: { view: AuditView }) {
+  const { run, ai } = view;
+  const notes = run.semanticNotes;
+  const box = 'rounded-lg px-5 py-3 text-sm ring-1';
+  if (run.semanticStatus === 'pending') {
+    return (
+      <p className={`${box} bg-panel text-ink-soft ring-line`}>
+        {ai.reviewPending ? 'AI-assisted review in progress… the score may change slightly when it finishes.' : 'The AI-assisted review did not finish. The score below uses the automated checks only.'}
+      </p>
+    );
+  }
+  if (run.semanticStatus === 'mock') {
+    return (
+      <div className={`${box} bg-amber-50 text-signal-warn ring-amber-200`} role="note">
+        <p className="font-medium">Mock AI review — no AI provider is configured.</p>
+        <p className="mt-0.5">
+          AI-assisted questions were answered by simple text checks or left unassessed. They are listed separately at the bottom and do not affect the
+          score.
+        </p>
+      </div>
+    );
+  }
+  if (run.semanticStatus === 'failed' || run.semanticStatus === 'skipped') {
+    return (
+      <p className={`${box} bg-panel text-ink-soft ring-line`}>
+        AI-assisted review {run.semanticStatus === 'skipped' ? 'skipped' : 'unavailable'}: {sentence(run.semanticError ?? 'no reason recorded')} The score below
+        uses the automated checks only.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <p className={`${box} bg-panel text-ink-soft ring-line`}>
+        Includes an AI-assisted review ({ai.model ?? notes?.model ?? 'model unknown'}, rubric {run.semanticPromptVersion}). AI answers count for at most 40% of any
+        category, and only when the quotes they rely on were found word-for-word on the site.
+        {notes && notes.citationsRejected > 0
+          ? ` ${notes.citationsRejected} quote${notes.citationsRejected === 1 ? '' : 's'} could not be found on the site and ${notes.citationsRejected === 1 ? 'was' : 'were'} discarded.`
+          : ''}
+      </p>
+      {notes?.instructionsFoundInContent && (
+        <p className={`${box} bg-amber-50 text-signal-warn ring-amber-200`} role="note">
+          The website’s text contains instructions aimed at AI tools. They were treated as page content and ignored.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -89,7 +147,10 @@ export function AuditPanel({
     );
   }
 
-  const { run, findings, categoryInfo } = view;
+  const { run, categoryInfo } = view;
+  // Mock answers are never mixed in with real findings.
+  const mockAnswers = run.semanticStatus === 'mock' ? view.findings.filter((finding) => finding.source === 'semantic') : [];
+  const findings = run.semanticStatus === 'mock' ? view.findings.filter((finding) => finding.source !== 'semantic') : view.findings;
   const label = (category: string) => categoryInfo[category as keyof typeof categoryInfo]?.label ?? category;
   const scored = (run.categories ?? []).filter((category) => categoryInfo[category.category].weight > 0);
   const problems = findings.filter((finding) => (finding.outcome === 'fail' || finding.outcome === 'partial') && finding.pointsPossible > 0);
@@ -106,6 +167,8 @@ export function AuditPanel({
           {!view.pending && <ActionButton action={reAudit} label="Re-run audit" pendingLabel="Starting…" />}
         </div>
       )}
+
+      <AiReviewNotice view={view} />
 
       <div className="rounded-lg border border-line bg-panel">
         <div className="grid gap-6 p-5 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
@@ -220,7 +283,10 @@ export function AuditPanel({
         <ul className="mt-3 divide-y divide-line text-sm">
           {working.map((finding) => (
             <li key={finding.id} className="py-2">
-              <p className="font-medium">{finding.title}</p>
+              <p className="font-medium">
+                {finding.title}
+                {finding.source === 'semantic' && <span className="ml-2 text-xs font-normal text-violet-800">AI-assisted</span>}
+              </p>
               <p className="text-ink-soft">{finding.detail}</p>
               <Evidence finding={finding} />
             </li>
@@ -228,11 +294,29 @@ export function AuditPanel({
         </ul>
       </details>
 
+      {mockAnswers.length > 0 && (
+        <details className="rounded-lg border border-amber-200 bg-panel px-5 py-3">
+          <summary className="cursor-pointer text-sm font-semibold">Mock AI answers — not scored ({mockAnswers.length})</summary>
+          <ul className="mt-3 divide-y divide-line text-sm">
+            {mockAnswers.map((finding) => (
+              <li key={finding.id} className="py-2">
+                <p className="font-medium">
+                  {finding.ruleId.replace('semantic.', '')}: {finding.outcome.replace('_', ' ')}
+                </p>
+                <p className="text-ink-soft">{finding.detail}</p>
+                <Evidence finding={finding} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       <details className="rounded-lg border border-line bg-panel px-5 py-3">
         <summary className="cursor-pointer text-sm font-semibold">How this score is calculated</summary>
         <div className="mt-3 space-y-4 text-sm text-ink-soft">
           <p>
-            Each check below is a fixed, versioned rule ({run.rulesetVersion}). A check earns all, part or none of its points. A category score is
+            Each automated check below is a fixed, versioned rule ({run.rulesetVersion}). AI-assisted questions ({run.semanticPromptVersion ?? 'not run'}) are
+            scored in code from the AI’s rating, need a verified quote to count, and are capped at 40% of each category. A check earns all, part or none of its points. A category score is
             points earned divided by points available for the checks that could be assessed; checks that do not apply, or could not be assessed, are
             left out rather than counted against the site. The overall score is the weighted average of the category scores.
           </p>
@@ -278,7 +362,9 @@ export function AuditPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
         <span>
-          Audit {run.id.slice(0, 8)} · {run.rulesetVersion} · {run.finishedAt ? new Date(run.finishedAt).toLocaleString() : ''}
+          Audit {run.id.slice(0, 8)} · {run.rulesetVersion}
+          {run.semanticPromptVersion ? ` · ${run.semanticPromptVersion}` : ''} · {run.finishedAt ? new Date(run.finishedAt).toLocaleString() : ''} · AI
+          cost for this prospect ≈ ${view.ai.totalCostUsd.toFixed(view.ai.totalCostUsd < 1 ? 3 : 2)}
         </span>
         {!view.stale && !view.pending && <ActionButton action={reAudit} label="Re-run audit" pendingLabel="Starting…" />}
       </div>

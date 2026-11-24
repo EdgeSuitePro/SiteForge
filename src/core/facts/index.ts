@@ -14,7 +14,7 @@ export const MAX_EVIDENCE = 5;
 const MAX_FACTS_PER_TYPE: Partial<Record<Fact['type'], number>> = { price: 40, service_area: 20, hours: 20, locality: 30 };
 
 const CONFIDENCE_RANK: Record<Confidence, number> = { high: 3, medium: 2, low: 1 };
-const METHOD_RANK: Record<FactMethod, number> = { structured_data: 3, markup: 2, text_pattern: 1 };
+const METHOD_RANK: Record<FactMethod, number> = { structured_data: 3, markup: 2, text_pattern: 1, ai_extracted: 1 };
 
 function candidateRank(candidate: FactCandidate, depthByPage: Map<string, number>): number {
   return (
